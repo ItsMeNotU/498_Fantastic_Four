@@ -3,7 +3,7 @@ con  <- "/Users/tobiamartens/Desktop/Fantastic Four - Capstone/Data/reviews_Groc
 
 reviews <- stream_in(file(con))
 
-#count the number of words per review, length returns 1 if there is a match
+#count the number of words per review
 numWords <- sapply(gregexpr("\\W+", reviews$reviewText), length)
 numWords.5stars <- sapply(gregexpr("\\W+", reviews[reviews$overall==5,]$reviewText), length)
 numWords.4stars <- sapply(gregexpr("\\W+", reviews[reviews$overall==4,]$reviewText), length)
