@@ -8,10 +8,19 @@ con  <- "/Users/tobiamartens/Desktop/Fantastic Four - Capstone/Data/reviews_Groc
 
 reviews <- stream_in(file(con))
 
+#create copy
+reviews.copy <- reviews
+
+#initial sample for faster processing - plan on re-running final script & model 
+#on the entire dataset
+sample.rows <- sample(nrow(reviews), 5000)
+reviews <- reviews[sample.rows, ]
+
 text.vector <- as.list(reviews$reviewText)
 text.vector <- unlist(text.vector)
 review_source <- VectorSource(text.vector)
 corpus <- Corpus(review_source)
+
 
 #data formatting function
 clean.text <- function(x) {
@@ -23,7 +32,7 @@ clean.text <- function(x) {
 
 corpus <- clean.text(corpus)
 tdm <- TermDocumentMatrix(corpus)
-tdm <- removeSparseTerms(tdm, 0.95)        
+tdm <- removeSparseTerms(tdm, 0.99)        
 
 #create a list with rating as the first element and term document matrix as second
 tdm <- list(Rating = reviews$overall, Tdm = tdm)
@@ -43,6 +52,21 @@ test  <- s.df[-train.rows,]
 train.y <- train$rating
 test.y <- test$rating
 
-train$rating <-NULL
-test$rating <- NULL
+#base model - SVM
+#For multiclass-classification with k levels, k>2, libsvm uses the ‘one-against-one’-approach, in
+#which k(k-1)/2 binary classifiers are trained; the appropriate class is found by a 
+#voting scheme. degree = 3 (default)
+library( 'e1071' )
+svm.1 <- svm(rating~. , data = train, kernel = "polynomial", degree = 10)
+svm.1.preds <- predict(svm.1, test)
 
+#empirical error rate
+err <- sum(test.y != svm.1.preds)/nrow(test)
+err
+
+#what is the error rate if we predict that every review is a 5 star
+levels <- afactor(c(1,2,3,4,5))
+five.stars <- factor(rep(5, nrow(test)), levels = c(1,2,3,4,5))
+
+err.1 <- sum(test.y != five.stars)/nrow(test)
+err.1
