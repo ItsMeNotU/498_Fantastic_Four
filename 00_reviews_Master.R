@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
-# reviews_Master
-# Last Updated: 2016-10-27 by MJG
+# 00_reviews_Master
+# Last Updated: 2016-10-28 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -41,28 +41,51 @@ url = "http://bit.ly/1T6LhBJ"
 source.GitHub(url); rm(url)
 
 #------------------------------------------------------------------------------
-# Text Cleaning & Frequent Terms
+# Text Cleaning
 #------------------------------------------------------------------------------
-text.clean = function(df, freq = FALSE, stop.words){
-    temp = Corpus(VectorSource(paste(df, collapse = " ")))
+text.clean = function(df, stop.words, sparse, freq = FALSE){
+    require(tm)
+    # Set valid range for sparse and check
+    if (!missing(sparse)){
+        val.range = round(seq(from = 0.01, to = 0.99, by = 0.01), digits = 2)
+        sparse = round(sparse, digits = 2)
+        if (!sparse %in% val.range){
+            stop("The value of sparse must be between 0.01 and 0.99.")
+        }
+    }
+    # Check for sparse value and freq = TRUE
+    if (!missing(sparse) && freq){
+        warning("Frequency argument ignored when sparse value given.")
+    }
+    # Basic cleaning functions
+    temp = Corpus(VectorSource(df))
     temp = tm_map(temp, content_transformer(tolower))
     temp = tm_map(temp, removePunctuation)
     temp = tm_map(temp, stripWhitespace)
-    if (!missing(stop.words)){
-        temp = tm_map(temp, removeWords, c(stopwords("english"),
-                                           stop.words))
-    } else {
-        temp = tm_map(temp, removeWords, c(stopwords("english")))
-    }
+      # Check for additional stop words
+      if (!missing(stop.words)){
+          temp = tm_map(temp, removeWords, c(stopwords("english"), stop.words))
+      } else {
+          temp = tm_map(temp, removeWords, stopwords("english"))
+      }
     temp = tm_map(temp, stemDocument)
-    if (!freq){
-        return(temp)
+    # Check for sparse argument
+    if (!missing(sparse)){
+        tdm = TermDocumentMatrix(temp)
+        tdm = removeSparseTerms(tdm, sparse = sparse)
+        return(tdm)
     }
-    if (freq){
-        dtm = as.matrix(DocumentTermMatrix(temp))
-        freq = colSums(dtm)
-        freq = sort(freq, decreasing = TRUE)
-        head(freq, n = 100)
+    # Check for frequency argument
+    if (missing(sparse)){
+        if (!freq){
+            return(temp)
+        }
+        if (freq){
+            dtm = as.matrix(DocumentTermMatrix(temp))
+            freq = colSums(dtm)
+            freq = sort(freq, decreasing = TRUE)
+            head(freq, n = 100)
+        }
     }
 }
 
@@ -334,15 +357,14 @@ stop.list = c("tast",
               "coffe",
               "can")
 
-# Clean text using stop words
-reviews.mod.corpus = text.clean(reviews.mod$reviewText,
-                                stop.words = stop.list)
-
-# Create Term Document Matrix
-reviews.mod.tdm = TermDocumentMatrix(reviews.mod.corpus)
-
-# Remove sparse terms
-reviews.mod.tdm = removeSparseTerms(reviews.mod.tdm, 0.99)
+# Now clean text again - four steps:
+#   1. Create corpus
+#   2. Clean text using stop words
+#   3. Create Term Document Matrix
+#   4. Remove sparse terms
+reviews.mod.tdm = text.clean(reviews.mod$reviewText,
+                             stop.words = stop.list,
+                             sparse = 0.99)
 
 #------------------------------------------------------------------------------
 # Model-based
@@ -369,6 +391,12 @@ trn.idx = createDataPartition(reviews.mod$helpful.bins,
 
 # Validate split; target = 0.70
 length(trn.idx) / nrow(reviews.mod)
+
+#------------------------------------------------------------------------------
+# Additional Prep
+#------------------------------------------------------------------------------
+
+
 
 #------------------------------------------------------------------------------
 # Model_Type_01
