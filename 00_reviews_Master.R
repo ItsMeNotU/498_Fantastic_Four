@@ -13,6 +13,7 @@ library(caret)
 library(doParallel)
 library(dplyr)
 library(ggplot2)
+library(httr)
 library(jsonlite)
 library(randomForest)
 library(tm)
@@ -91,6 +92,23 @@ text.clean = function(df, stop.words, sparse, freq = FALSE){
         }
     }
 }
+
+#==============================================================================
+# API Call
+#==============================================================================
+
+# Specify url and path
+url = "http://search-predict-498-etrnmkcw2ss5k2tne664bemmjq.us-west-2.es.amazonaws.com/"
+path = "reviews/_search?q=coffee"
+
+# Get raw result
+raw.result = GET(url = url, path = path)
+
+# Convert raw result content to character string
+raw.content = rawToChar(raw.result$content)
+
+# Download data and convert from JSON
+api.content = fromJSON(raw.content)
 
 #==============================================================================
 # Data Import, Prep, and Staging
