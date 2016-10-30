@@ -123,15 +123,54 @@ reviews = stream_in(file("reviews_Grocery_and_Gourmet_Food_5.json.gz"))
 # View structure
 str(reviews)
 
-#------------------------------------------------------------------------------
-# Prep
-#------------------------------------------------------------------------------
+#--------------------------------------
+# Data Quality Check
+#--------------------------------------
+# Check for duplicated rows
+anyDuplicated(reviews,
+              fromLast = TRUE)
+anyDuplicated(reviews[c("reviewerID", "asin")],
+              fromLast = TRUE)
 
 # Check for NA values
 colSums(is.na(reviews))[colSums(is.na(reviews)) > 0]
 
+# Examine reviewerID when reviewerName is missing
+miss.reviewerName.reviewerID = reviews %>%
+                                   filter(is.na(reviewerName)) %>%
+                                   group_by(reviewerID) %>%
+                                   summarize(count = n())
+
+# reviewerID of max times reviewerName is missing
+miss.reviewerName.reviewerID[which.max(miss.reviewerName.reviewerID$count), ]
+
+# Examine asin when reviewerName is missing
+miss.reviewerName.asin = reviews %>%
+                             filter(is.na(reviewerName)) %>%
+                             group_by(asin) %>%
+                             summarize(count = n())
+
+# asin of max times reviewerName is missing
+miss.reviewerName.asin[which.max(miss.reviewerName.asin$count), ]
+
+# asin of B006MONQMC shows reviewerName is missing 351 times, examine further
+# asin of B006MONQMC has 468 reviews = name missing 75.00% of the time
+miss.reviewerName.asin.max = 
+    miss.reviewerName.asin[which.max(miss.reviewerName.asin$count), ]$asin
+reviews %>%
+    filter(asin == miss.reviewerName.asin.max) %>% 
+    summarize(count = n())
+
 # Replace NA values in reviewerName with blank
+#   Note: necessary for modeling on test data
 reviews$reviewerName[is.na(reviews$reviewerName)] = ""
+
+# Tidy workspace
+rm(list=ls(pattern = "miss"))
+
+#------------------------------------------------------------------------------
+# Prep
+#------------------------------------------------------------------------------
 
 # Rename existing variables
 names(reviews)[names(reviews)=="overall"] = "overall.num"
@@ -180,25 +219,34 @@ reviews.eda = reviews[reviews$helpful.nan == 0, ]
 #==============================================================================
 # EDA
 #==============================================================================
-# NOTE: this only examines reviews which received a vote for helpfulness
+
+###############################################################################
+## NOTE: this only examines reviews which received a vote for helpfulness    ##
+###############################################################################
 
 #------------------------------------------------------------------------------
 # Traditional - Quantitative
 #------------------------------------------------------------------------------
 # Frequency of reviewerID
 freq.reviewerID = t(fac.freq(reviews.eda$reviewerID,
-                             cat = F))
+                             cat = FALSE))
+
+# Number of unique reviewerID
+nlevels(reviews.eda$reviewerID)
 
 # Frequency of asin
 freq.asin = t(fac.freq(reviews.eda$asin,
-                       cat = F))
+                       cat = FALSE))
+
+# Number of unique asin
+nlevels(reviews.eda$asin)
 
 #--------------------------------------
-# helpful.bins
+# Variable: helpful.bins
 #--------------------------------------
 # Frequency of helpful bins
 freq.helpful = fac.freq(reviews.eda$helpful.bins,
-                        cat = F)
+                        cat = FALSE)
 
 # Frequency of helpful bins by reviewerID
 freq.helpful.reviewerID = fac.freq(reviews.eda$reviewerID, 
@@ -220,25 +268,56 @@ count.helpful.up = reviews.eda %>%
                              sort = TRUE)
 
 #--------------------------------------
-# overall
+# Variable: overall.num
 #--------------------------------------
-# Frequency of overall
-freq.overall = fac.freq(reviews.eda$overall.fac,
-                        cat = F)
+# Summary statistics on overall.num
+basicStats(reviews.eda$overall.num)
 
-# Frequency of overall by reviewerID
+# Mean of overall.num by asin
+mean.overall.asin = reviews.eda %>%
+                        group_by(asin) %>%
+                        summarise(average = mean(overall.num))
+
+# Count of rounded mean for overall.num by asin
+count.overall.asin = mean.overall.asin %>%
+                         group_by(average = round(average/0.125)*0.125) %>%
+                         summarize(count = n())
+
+# Store top and bottom values of mean overall.num by asin
+#    Could be used later for polarity analysis
+asin.overall.top = mean.overall.asin %>%
+                       filter(average >= 4) 
+asin.overall.bot = mean.overall.asin %>%
+                       filter(average <= 2) 
+
+# Create subset of reviews containing top and bottom reviews by overall.num
+reviews.overall.top = semi_join(reviews.eda,
+                                asin.overall.top,
+                                by = "asin")
+reviews.overall.bot = semi_join(reviews.eda, 
+                                asin.overall.bot,
+                                by = "asin")
+
+#--------------------------------------
+# Variable: overall.fac
+#--------------------------------------
+# Frequency of overall.fac
+freq.overall = fac.freq(reviews.eda$overall.fac,
+                        cat = FALSE)
+
+# Frequency of overall.fac by reviewerID
 freq.overall.reviewerID = fac.freq(reviews.eda$reviewerID,
                                    reviews.eda$overall.fac)
 
-# Frequency of overall by asin
+# Frequency of overall.fac by asin
 freq.overall.asin = fac.freq(reviews.eda$asin,
                              reviews.eda$overall.fac)
 
-# Frequency of overall by year
+# Frequency of overall.fac by year
 freq.overall.year = fac.freq(reviews.eda$time.year,
                              reviews.eda$overall.fac)
 
-# Count of overall by asin for 5-star reviews
+# Count of overall.fac by asin for 5-star reviews
 count.overall.fs = reviews.eda %>%
                        group_by(asin) %>%
                        filter(overall.fac == "5") %>%
@@ -252,35 +331,54 @@ count.overall.fs = reviews.eda %>%
 ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
-    labs(title = "Histogram of Amazon Ratings by Overall",
-         y = "Count",
-         x = "Overall Rating")
+    stat_count(aes(label = ..count..),
+             vjust = 1.6,
+             color = "white",
+             size = 3.5,
+             geom = "text") +
+    labs(title = "Histogram of Product Ratings by Overall",
+         x = "Overall Rating",
+         y = "Count")
 
 # Histogram of overall ratings by year
 ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
-    labs(title = "Histogram of Amazon Ratings by Overall",
-         y = "Count",
-         x = "Overall Rating")
+    labs(title = "Histogram of Product Ratings by Overall",
+         x = "Overall Rating",
+         y = "Count")
+
+# Barplot of rounded mean of overall.num by asin (count)
+ggplot(data = count.overall.asin,
+       aes(x = average,
+           y = count)) +
+    geom_bar(stat = "identity") +
+    labs(title = "Number of Products by Mean Overall Rating",
+         x = "Mean Overall Rating\n(rounded to nearest 1/8)",
+         y = "Count")
 
 # Histogram of helpful bins
 ggplot(data = reviews.eda,
        aes(x = helpful.bins)) +
     geom_bar(fill = "grey50") +
-    labs(title = "Histogram of Amazon Ratings by Helpfulness Bin",
-         y = "Count",
-         x = "Helpful Bins")
+    stat_count(aes(label = ..count..),
+               vjust = 1.6,
+               color = "white",
+               size = 3.5,
+               geom = "text") +
+    labs(title = "Histogram of Product Ratings by Helpful Bins",
+         x = "Helpful Bins",
+         y = "Count")
 
 # Histogram of helpful bins by year
 ggplot(data = reviews.eda,
        aes(x = helpful.bins)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
-    labs(title = "Histogram of Amazon Ratings by Helpfulness Bin",
-         y = "Count",
-         x = "Helpful Bins")
+    labs(title = "Histogram of Product Ratings by Helpful Bins",
+         x = "Helpful Bins",
+         y = "Count")
 
 # Count of reviews over time
 ggplot(data = reviews.eda %>%
@@ -289,9 +387,9 @@ ggplot(data = reviews.eda %>%
        aes(x = time.stamp,
            y = n)) +
     geom_line() +
-    labs(title = "Number of Reviews Over Time",
-         y = "Number of Reviews",
-         x = "Time")
+    labs(title = "Number of Product Reviews Over Time",
+         x = "Time",
+         y = "Number of Product Reviews")
 
 #==============================================================================
 # Text Analysis
