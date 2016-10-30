@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-10-29 by MJG
+# Last Updated: 2016-10-30 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -20,7 +20,20 @@ library(tm)
 library(wordcloud)
 
 #==============================================================================
-# Functions
+# §00 | Table of Contents
+#==============================================================================
+# To quickly get to a section search for "§X" where X corresponds below:
+#   §00 - Table of Contents
+#   §01 - Functions
+#   §02 - API Call
+#   §03 - Data Import, Prep, and Staging
+#   §04 - EDA
+#   §05 - Text Analysis
+#   §06 - Model Prep
+#   §07 - Model Build
+
+#==============================================================================
+# §01 | Functions
 #==============================================================================
 
 #------------------------------------------------------------------------------
@@ -94,7 +107,7 @@ text.clean = function(df, stop.words, sparse, freq = FALSE){
 }
 
 #==============================================================================
-# API Call
+# §02 - API Call
 #==============================================================================
 
 # Specify url and path
@@ -111,7 +124,7 @@ raw.content = rawToChar(raw.result$content)
 api.content = fromJSON(raw.content)
 
 #==============================================================================
-# Data Import, Prep, and Staging
+# §03 - Data Import, Prep, and Staging
 #==============================================================================
 
 #------------------------------------------------------------------------------
@@ -217,7 +230,7 @@ reviews = subset(reviews, select = -c(helpful))
 reviews.eda = reviews[reviews$helpful.nan == 0, ]
 
 #==============================================================================
-# EDA
+# §04 - EDA
 #==============================================================================
 
 ###############################################################################
@@ -271,32 +284,32 @@ count.helpful.up = reviews.eda %>%
 # Variable: overall.num
 #--------------------------------------
 # Summary statistics on overall.num
-basicStats(reviews.eda$overall.num)
+summary(reviews.eda$overall.num)
 
 # Mean of overall.num by asin
 mean.overall.asin = reviews.eda %>%
                         group_by(asin) %>%
                         summarise(average = mean(overall.num))
 
+# Store top and bottom values of mean overall.num by asin
+#    Could be used later for polarity analysis
+mean.overall.asin.top = mean.overall.asin %>%
+                            filter(average >= 4) 
+mean.overall.asin.bot = mean.overall.asin %>%
+                            filter(average <= 2) 
+
+# Create subset of reviews containing top and bottom reviews by overall.num
+reviews.eda.overall.top = semi_join(reviews.eda,
+                                    mean.overall.asin.top,
+                                    by = "asin")
+reviews.eda.overall.bot = semi_join(reviews.eda, 
+                                    mean.overall.asin.bot,
+                                    by = "asin")
+
 # Count of rounded mean for overall.num by asin
 count.overall.asin = mean.overall.asin %>%
                          group_by(average = round(average/0.125)*0.125) %>%
                          summarize(count = n())
-
-# Store top and bottom values of mean overall.num by asin
-#    Could be used later for polarity analysis
-asin.overall.top = mean.overall.asin %>%
-                       filter(average >= 4) 
-asin.overall.bot = mean.overall.asin %>%
-                       filter(average <= 2) 
-
-# Create subset of reviews containing top and bottom reviews by overall.num
-reviews.overall.top = semi_join(reviews.eda,
-                                asin.overall.top,
-                                by = "asin")
-reviews.overall.bot = semi_join(reviews.eda, 
-                                asin.overall.bot,
-                                by = "asin")
 
 #--------------------------------------
 # Variable: overall.fac
@@ -392,16 +405,20 @@ ggplot(data = reviews.eda %>%
          y = "Number of Product Reviews")
 
 #==============================================================================
-# Text Analysis
+# §05 - Text Analysis
 #==============================================================================
+
+###############################################################################
+## NOTE: this only examines reviews which received a vote for helpfulness    ##
+###############################################################################
 
 #------------------------------------------------------------------------------
 # Word Counts (Mean)
 #------------------------------------------------------------------------------
 
-#------------------
-# helpful.bins
-#------------------
+#--------------------------------------
+# Variable: helpful.bins
+#--------------------------------------
 # Mean word count for review text by helpful bins
 mean.reviewText.lo = round(mean(reviews.eda$reviewText.count
                                 [reviews.eda$helpful.bins == "Lower"]),
@@ -417,9 +434,9 @@ count.reviewText = data.frame(Levels = levels(reviews.eda$helpful.bins),
                                         mean.reviewText.md,
                                         mean.reviewText.up))
 
-#------------------
-# summary
-#------------------
+#--------------------------------------
+# Variable: summary
+#--------------------------------------
 # Mean word count for summary by helpful bins
 mean.summary.lo = round(mean(reviews.eda$summary.count
                              [reviews.eda$helpful.bins == "Lower"]),
@@ -438,7 +455,7 @@ count.summary = data.frame(Levels = levels(reviews.eda$helpful.bins),
 #------------------------------------------------------------------------------
 # Frequent Terms (Top 100)
 #------------------------------------------------------------------------------
-# Overall
+# All helpful bins
 mft = text.clean(reviews.eda$reviewText,
                  freq = TRUE)
 
@@ -499,7 +516,7 @@ stop.list = c("also",
               "will")
 
 #==============================================================================
-# Model Prep
+# §06 - Model Prep
 #==============================================================================
 
 # Create version of reviews for modeling
@@ -557,7 +574,7 @@ trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
                                   list = F)
 
 #==============================================================================
-# Model Build
+# §07 - Model Build
 #==============================================================================
 # Note: various models built, organized by type, then model number(s)
 # Note: models below currently use sub-sample to build model, but predict
