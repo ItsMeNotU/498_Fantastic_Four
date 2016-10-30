@@ -16,24 +16,28 @@ library(ggplot2)
 library(httr)
 library(jsonlite)
 library(randomForest)
+library(stringr)
+library(syuzhet)
+library(tidytext)
 library(tm)
 library(wordcloud)
 
 #==============================================================================
-# §00 | Table of Contents
+# S00 | Table of Contents
 #==============================================================================
-# To quickly get to a section search for "§X" where X corresponds below:
-#   §00 - Table of Contents
-#   §01 - Functions
-#   §02 - API Call
-#   §03 - Data Import, Prep, and Staging
-#   §04 - EDA
-#   §05 - Text Analysis
-#   §06 - Model Prep
-#   §07 - Model Build
+# To quickly get to a section search for "SX" where X corresponds below:
+#   S00 - Table of Contents
+#   S01 - Functions
+#   S02 - API Call
+#   S03 - Data Import, Prep, and Staging
+#   S04 - EDA
+#   S05 - Text Analysis
+#   S06 - Sentiment Analysis
+#   S07 - Model Prep
+#   S08 - Model Build
 
 #==============================================================================
-# §01 | Functions
+# S01 | Functions
 #==============================================================================
 
 #------------------------------------------------------------------------------
@@ -107,7 +111,7 @@ text.clean = function(df, stop.words, sparse, freq = FALSE){
 }
 
 #==============================================================================
-# §02 - API Call
+# S02 - API Call
 #==============================================================================
 
 # Specify url and path
@@ -124,7 +128,7 @@ raw.content = rawToChar(raw.result$content)
 api.content = fromJSON(raw.content)
 
 #==============================================================================
-# §03 - Data Import, Prep, and Staging
+# S03 - Data Import, Prep, and Staging
 #==============================================================================
 
 #------------------------------------------------------------------------------
@@ -145,6 +149,15 @@ anyDuplicated(reviews,
 anyDuplicated(reviews[c("reviewerID", "asin")],
               fromLast = TRUE)
 
+# Add a primary key to use for convenience
+reviews$reviewsPK = seq.int(nrow(reviews))
+
+# Reorder to put reviews.pk first
+reviews = reviews[c(10, 1:9)]
+
+#------------------
+# Missing Values
+#------------------
 # Check for NA values
 colSums(is.na(reviews))[colSums(is.na(reviews)) > 0]
 
@@ -184,7 +197,6 @@ rm(list=ls(pattern = "miss"))
 #------------------------------------------------------------------------------
 # Prep
 #------------------------------------------------------------------------------
-
 # Rename existing variables
 names(reviews)[names(reviews)=="overall"] = "overall.num"
 
@@ -230,7 +242,7 @@ reviews = subset(reviews, select = -c(helpful))
 reviews.eda = reviews[reviews$helpful.nan == 0, ]
 
 #==============================================================================
-# §04 - EDA
+# S04 - EDA
 #==============================================================================
 
 ###############################################################################
@@ -349,7 +361,7 @@ ggplot(data = reviews.eda,
              color = "white",
              size = 3.5,
              geom = "text") +
-    labs(title = "Histogram of Product Ratings by Overall",
+    labs(title = "Histogram of Overall Product Ratings",
          x = "Overall Rating",
          y = "Count")
 
@@ -358,7 +370,7 @@ ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
-    labs(title = "Histogram of Product Ratings by Overall",
+    labs(title = "Histogram of Overall Product Ratings",
          x = "Overall Rating",
          y = "Count")
 
@@ -405,7 +417,7 @@ ggplot(data = reviews.eda %>%
          y = "Number of Product Reviews")
 
 #==============================================================================
-# §05 - Text Analysis
+# S05 - Text Analysis
 #==============================================================================
 
 ###############################################################################
@@ -478,16 +490,20 @@ mft.up = text.clean(reviews.eda$reviewText
 # Word Clouds
 #------------------------------------------------------------------------------
 # Overall
-wordcloud(names(mft), mft)
+wordcloud(names(mft),
+          mft)
 
 # Lower helpful bin
-wordcloud(names(mft.lo), mft.lo)
+wordcloud(names(mft.lo),
+          mft.lo)
 
 # Middle helpful bin
-wordcloud(names(mft.md), mft.md)
+wordcloud(names(mft.md),
+          mft.md)
 
 # Upper helpful bin
-wordcloud(names(mft.up), mft.up)
+wordcloud(names(mft.up),
+          mft.up)
 
 #------------------------------------------------------------------------------
 # Stop Words
@@ -516,7 +532,125 @@ stop.list = c("also",
               "will")
 
 #==============================================================================
-# §06 - Model Prep
+# S06 - Sentiment Analysis
+#==============================================================================
+# Link: http://bit.ly/2apeTZl
+
+#------------------------------------------------------------------------------
+# Word Level
+#------------------------------------------------------------------------------
+# Create tidy dataset (long) of key words by reviewsPK
+words = reviews %>%
+            tbl_df() %>%
+            select(reviewsPK,
+                   reviewerID,
+                   asin,
+                   overall.num,
+                   reviewText) %>%
+            unnest_tokens(word,
+                          reviewText) %>%
+            filter(!word %in% stop_words$word,
+                   str_detect(word, "^[a-z']+$"))
+
+# Score using AFINN lexicon, scores range from {-5, 5}
+AFINN = sentiments %>%
+            filter(lexicon == "AFINN") %>%
+            select(word, 
+                   afinn.score = score)
+
+# Now join scores back to words
+words.afinn = words %>%
+                  inner_join(AFINN, 
+                      by = "word") %>%
+                  group_by(reviewsPK,
+                          overall.num) %>%
+                  summarize(afinn.score.mean = mean(afinn.score))
+
+# Collapse and add count of word frequency in each review
+words.count = words %>%
+                  count(reviewsPK,
+                        reviewerID,
+                        asin,
+                        overall.num,
+                        word) %>%
+                  ungroup()
+
+# Summary statistics on unique words in reviews
+words.stats = words.count %>%
+                  group_by(word) %>%
+                  summarize(products = n_distinct(asin),
+                            reviews = n(),
+                            uses = sum(n),
+                            average.overall = mean(overall.num)) %>%
+                  ungroup()
+
+# Create subset of summary statistics
+words.stats.sub = reviews.words.stats %>%
+                      filter(reviews >= 600,
+                             products >= 20)
+
+# Explore most positive words of subset
+words.stats.sub %>% 
+    arrange(desc(average.overall))
+
+# Explore most negative words of subset
+words.stats.sub %>% 
+    arrange(average.overall)
+
+# Score subset using AFINN lexicon, scores range from {-5, 5}
+#   Note: Very few observations, looks like some words do not exist in AFINN,
+#   e.g. absolutely.
+words.stats.sub.afinn = reviews.words.stats.sub %>% 
+                            inner_join(AFINN)
+
+#--------------------------------------
+# Plots
+#--------------------------------------
+# Boxplot of sentiment score by overall.num
+ggplot(words.afinn, 
+       aes(overall.num, 
+           afinn.score.mean, 
+           group = overall.num)) +
+    geom_boxplot() +
+    labs(title = "Mean AFINN Score by Overall Product Rating",
+         x = "Overall Rating",
+         y = "Mean Sentiment Score")
+
+# Scatterplot of review words by quantity and overall rating
+ggplot(words.stats.sub,
+       aes(reviews, 
+           average.overall)) +
+    geom_point() +
+    geom_text(aes(label = word), 
+              check_overlap = TRUE, 
+              vjust = 1, 
+              hjust = 1) +
+    scale_x_log10() +
+    geom_hline(yintercept = mean(reviews$overall.num), 
+               color = "red", 
+               lty = 2) +
+    labs(title = "Review Words by Quantity and Overall Product Rating",
+         x = "Number of Reviews",
+         y = "Overall Rating")
+
+# Boxplot of mean overall ratings of reviews with words by AFINN score
+ggplot(words.stats.sub.afinn,
+       aes(afinn.score,
+           average.overall,
+           group = afinn.score)) +
+    geom_boxplot() +
+    labs(title = "AFINN Score of Keywords by Mean Overall Rating of Review",
+         x = "AFINN Score of Keyword",
+         y = "Mean Overall Rating of Review with Keyword")
+
+#------------------------------------------------------------------------------
+# Review Level
+#------------------------------------------------------------------------------
+
+
+
+#==============================================================================
+# S07 - Model Prep
 #==============================================================================
 
 # Create version of reviews for modeling
@@ -574,7 +708,7 @@ trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
                                   list = F)
 
 #==============================================================================
-# §07 - Model Build
+# S08 - Model Build
 #==============================================================================
 # Note: various models built, organized by type, then model number(s)
 # Note: models below currently use sub-sample to build model, but predict
