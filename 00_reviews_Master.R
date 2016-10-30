@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-10-28 by MJG
+# Last Updated: 2016-10-29 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -10,9 +10,11 @@ rm(list=ls())
 
 # Load libraries
 library(caret)
+library(doParallel)
 library(dplyr)
 library(ggplot2)
 library(jsonlite)
+library(randomForest)
 library(tm)
 library(wordcloud)
 
@@ -60,6 +62,7 @@ text.clean = function(df, stop.words, sparse, freq = FALSE){
     # Basic cleaning functions
     temp = Corpus(VectorSource(df))
     temp = tm_map(temp, content_transformer(tolower))
+    temp = tm_map(temp, removeNumbers)
     temp = tm_map(temp, removePunctuation)
     temp = tm_map(temp, stripWhitespace)
       # Check for additional stop words
@@ -105,15 +108,24 @@ str(reviews)
 #------------------------------------------------------------------------------
 # Prep
 #------------------------------------------------------------------------------
+
+# Check for NA values
+colSums(is.na(reviews))[colSums(is.na(reviews)) > 0]
+
+# Replace NA values in reviewerName with blank
+reviews$reviewerName[is.na(reviews$reviewerName)] = ""
+
 # Rename existing variables
 names(reviews)[names(reviews)=="overall"] = "overall.num"
 
 # Create flags, percentage score, and bins for reviews$helpful
+reviews$helpful.up = sapply(reviews$helpful, function(x) x[1])
+reviews$helpful.total = sapply(reviews$helpful, function(x) x[2])
 reviews$helpful.nan = sapply(reviews$helpful,
-                             function(x) ifelse(x[2]==0, 1, 
+                             function(x) ifelse(x[2] == 0, 1, 
                                              ifelse(x[1]>x[2], 1, 0)))
 reviews$helpful.perc = sapply(reviews$helpful,
-                              function(x) ifelse(x[2]==0, NA, 
+                              function(x) ifelse(x[2] == 0, NA, 
                                               ifelse(x[1]>x[2], NA, x[1]/x[2])))
 reviews$helpful.bins = cut(reviews$helpful.perc,
                            breaks = 3,
@@ -138,11 +150,14 @@ reviews$time.weekday = as.factor(weekdays(reviews$time.stamp))
 reviews$time.months = as.factor(months(reviews$time.stamp))
 reviews$time.year = as.factor(substr(reviews$time.stamp, 1, 4))
 
+# Drop helpful
+reviews = subset(reviews, select = -c(helpful))
+
 #------------------------------------------------------------------------------
 # Staging
 #------------------------------------------------------------------------------
 # Subset reviews for EDA, text mining, and modeling
-reviews.mod = reviews[reviews$helpful.nan == 0, ]
+reviews.eda = reviews[reviews$helpful.nan == 0, ]
 
 #==============================================================================
 # EDA
@@ -153,34 +168,34 @@ reviews.mod = reviews[reviews$helpful.nan == 0, ]
 # Traditional - Quantitative
 #------------------------------------------------------------------------------
 # Frequency of reviewerID
-freq.reviewerID = t(fac.freq(reviews.mod$reviewerID,
+freq.reviewerID = t(fac.freq(reviews.eda$reviewerID,
                              cat = F))
 
 # Frequency of asin
-freq.asin = t(fac.freq(reviews.mod$asin,
+freq.asin = t(fac.freq(reviews.eda$asin,
                        cat = F))
 
 #--------------------------------------
 # helpful.bins
 #--------------------------------------
 # Frequency of helpful bins
-freq.helpful = fac.freq(reviews.mod$helpful.bins,
+freq.helpful = fac.freq(reviews.eda$helpful.bins,
                         cat = F)
 
 # Frequency of helpful bins by reviewerID
-freq.helpful.reviewerID = fac.freq(reviews.mod$reviewerID, 
-                                   reviews.mod$helpful.bins)
+freq.helpful.reviewerID = fac.freq(reviews.eda$reviewerID, 
+                                   reviews.eda$helpful.bins)
 
 # Frequency of helpful bins by asin
-freq.helpful.asin = fac.freq(reviews.mod$asin,
-                             reviews.mod$helpful.bins)
+freq.helpful.asin = fac.freq(reviews.eda$asin,
+                             reviews.eda$helpful.bins)
 
 # Frequency of helpful bins by year
-freq.year = fac.freq(reviews.mod$time.year,
-                     reviews.mod$helpful.bins)
+freq.year = fac.freq(reviews.eda$time.year,
+                     reviews.eda$helpful.bins)
 
 # Count of upper helpful bin by asin
-count.helpful.up = reviews.mod %>%
+count.helpful.up = reviews.eda %>%
                        group_by(asin) %>%
                        filter(helpful.bins == "Upper") %>%
                        count(helpful.bins, 
@@ -190,23 +205,23 @@ count.helpful.up = reviews.mod %>%
 # overall
 #--------------------------------------
 # Frequency of overall
-freq.overall = fac.freq(reviews.mod$overall.fac,
+freq.overall = fac.freq(reviews.eda$overall.fac,
                         cat = F)
 
 # Frequency of overall by reviewerID
-freq.overall.reviewerID = fac.freq(reviews.mod$reviewerID,
-                                   reviews.mod$overall.fac)
+freq.overall.reviewerID = fac.freq(reviews.eda$reviewerID,
+                                   reviews.eda$overall.fac)
 
 # Frequency of overall by asin
-freq.overall.asin = fac.freq(reviews.mod$asin,
-                             reviews.mod$overall.fac)
+freq.overall.asin = fac.freq(reviews.eda$asin,
+                             reviews.eda$overall.fac)
 
 # Frequency of overall by year
-freq.overall.year = fac.freq(reviews.mod$time.year,
-                             reviews.mod$overall.fac)
+freq.overall.year = fac.freq(reviews.eda$time.year,
+                             reviews.eda$overall.fac)
 
 # Count of overall by asin for 5-star reviews
-count.overall.fs = reviews.mod %>%
+count.overall.fs = reviews.eda %>%
                        group_by(asin) %>%
                        filter(overall.fac == "5") %>%
                        count(overall.fac, 
@@ -216,7 +231,7 @@ count.overall.fs = reviews.mod %>%
 # Traditional - Qualitative
 #------------------------------------------------------------------------------
 # Histogram of overall ratings
-ggplot(data = reviews.mod,
+ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
     labs(title = "Histogram of Amazon Ratings by Overall",
@@ -224,7 +239,7 @@ ggplot(data = reviews.mod,
          x = "Overall Rating")
 
 # Histogram of overall ratings by year
-ggplot(data = reviews.mod,
+ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
@@ -233,7 +248,7 @@ ggplot(data = reviews.mod,
          x = "Overall Rating")
 
 # Histogram of helpful bins
-ggplot(data = reviews.mod,
+ggplot(data = reviews.eda,
        aes(x = helpful.bins)) +
     geom_bar(fill = "grey50") +
     labs(title = "Histogram of Amazon Ratings by Helpfulness Bin",
@@ -241,7 +256,7 @@ ggplot(data = reviews.mod,
          x = "Helpful Bins")
 
 # Histogram of helpful bins by year
-ggplot(data = reviews.mod,
+ggplot(data = reviews.eda,
        aes(x = helpful.bins)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
@@ -250,7 +265,7 @@ ggplot(data = reviews.mod,
          x = "Helpful Bins")
 
 # Count of reviews over time
-ggplot(data = reviews.mod %>%
+ggplot(data = reviews.eda %>%
                   count(time.stamp,
                         sort = FALSE),
        aes(x = time.stamp,
@@ -260,28 +275,28 @@ ggplot(data = reviews.mod %>%
          y = "Number of Reviews",
          x = "Time")
 
-#------------------------------------------------------------------------------
+#==============================================================================
 # Text Analysis
-#------------------------------------------------------------------------------
+#==============================================================================
 
-#--------------------------------------
+#------------------------------------------------------------------------------
 # Word Counts (Mean)
-#--------------------------------------
+#------------------------------------------------------------------------------
 
 #------------------
 # helpful.bins
 #------------------
 # Mean word count for review text by helpful bins
-mean.reviewText.lo = round(mean(reviews.mod$reviewText.count
-                                [reviews.mod$helpful.bins == "Lower"]),
+mean.reviewText.lo = round(mean(reviews.eda$reviewText.count
+                                [reviews.eda$helpful.bins == "Lower"]),
                            0)
-mean.reviewText.md = round(mean(reviews.mod$reviewText.count
-                                [reviews.mod$helpful.bins == "Middle"]),
+mean.reviewText.md = round(mean(reviews.eda$reviewText.count
+                                [reviews.eda$helpful.bins == "Middle"]),
                            0)
-mean.reviewText.up = round(mean(reviews.mod$reviewText.count
-                                [reviews.mod$helpful.bins == "Upper"]),
+mean.reviewText.up = round(mean(reviews.eda$reviewText.count
+                                [reviews.eda$helpful.bins == "Upper"]),
                            0)
-count.reviewText = data.frame(Levels = levels(reviews.mod$helpful.bins),
+count.reviewText = data.frame(Levels = levels(reviews.eda$helpful.bins),
                               Count = c(mean.reviewText.lo,
                                         mean.reviewText.md,
                                         mean.reviewText.up))
@@ -290,45 +305,45 @@ count.reviewText = data.frame(Levels = levels(reviews.mod$helpful.bins),
 # summary
 #------------------
 # Mean word count for summary by helpful bins
-mean.summary.lo = round(mean(reviews.mod$summary.count
-                             [reviews.mod$helpful.bins == "Lower"]),
+mean.summary.lo = round(mean(reviews.eda$summary.count
+                             [reviews.eda$helpful.bins == "Lower"]),
                         0)
-mean.summary.md = round(mean(reviews.mod$summary.count
-                             [reviews.mod$helpful.bins == "Middle"]),
+mean.summary.md = round(mean(reviews.eda$summary.count
+                             [reviews.eda$helpful.bins == "Middle"]),
                         0)
-mean.summary.up = round(mean(reviews.mod$summary.count
-                             [reviews.mod$helpful.bins == "Upper"]),
+mean.summary.up = round(mean(reviews.eda$summary.count
+                             [reviews.eda$helpful.bins == "Upper"]),
                         0)
-count.summary = data.frame(Levels = levels(reviews.mod$helpful.bins),
+count.summary = data.frame(Levels = levels(reviews.eda$helpful.bins),
                            Count = c(mean.summary.lo,
                                      mean.summary.md,
                                      mean.summary.up))
 
-#--------------------------------------
-# Top 100 Frequent Terms
-#--------------------------------------
+#------------------------------------------------------------------------------
+# Frequent Terms (Top 100)
+#------------------------------------------------------------------------------
 # Overall
-mft = text.clean(reviews.mod$reviewText,
+mft = text.clean(reviews.eda$reviewText,
                  freq = TRUE)
 
 # Lower helpful bin
-mft.lo = text.clean(reviews.mod$reviewText
-                    [reviews.mod$helpful.bins == "Lower"],
+mft.lo = text.clean(reviews.eda$reviewText
+                    [reviews.eda$helpful.bins == "Lower"],
                     freq = TRUE)
 
 # Middle helpful bin
-mft.md = text.clean(reviews.mod$reviewText
-                    [reviews.mod$helpful.bins == "Middle"],
+mft.md = text.clean(reviews.eda$reviewText
+                    [reviews.eda$helpful.bins == "Middle"],
                     freq = TRUE)
 
 # Upper helpful bin
-mft.up = text.clean(reviews.mod$reviewText
-                    [reviews.mod$helpful.bins == "Upper"],
+mft.up = text.clean(reviews.eda$reviewText
+                    [reviews.eda$helpful.bins == "Upper"],
                     freq = TRUE)
 
-#--------------------------------------
+#------------------------------------------------------------------------------
 # Word Clouds
-#--------------------------------------
+#------------------------------------------------------------------------------
 # Overall
 wordcloud(names(mft), mft)
 
@@ -341,23 +356,43 @@ wordcloud(names(mft.md), mft.md)
 # Upper helpful bin
 wordcloud(names(mft.up), mft.up)
 
-#--------------------------------------
-# Text Cleaning
-#--------------------------------------
+#------------------------------------------------------------------------------
+# Stop Words
+#------------------------------------------------------------------------------
 # Create stop list based on frequencies and word clouds
-stop.list = c("tast",
-              "like",
-              "flavor",
-              "just",
-              "one",
-              "good",
-              "tea",
-              "product",
-              "the",
+stop.list = c("also",
+              "around",
+              "can",
               "coffe",
-              "can")
+              "flavor",
+              "furthermore",
+              "good",
+              "isn",
+              "just",
+              "like",
+              "much",
+              "one",
+              "product",
+              "tast",
+              "tea",
+              "the",
+              "this",
+              "those",
+              "what",
+              "whether",
+              "will")
 
-# Now clean text again - four steps:
+#==============================================================================
+# Model Prep
+#==============================================================================
+
+# Create version of reviews for modeling
+reviews.mod = reviews.eda
+
+#------------------------------------------------------------------------------
+# Text Cleaning
+#------------------------------------------------------------------------------
+# Four steps:
 #   1. Create corpus
 #   2. Clean text using stop words
 #   3. Create Term Document Matrix
@@ -366,46 +401,451 @@ reviews.mod.tdm = text.clean(reviews.mod$reviewText,
                              stop.words = stop.list,
                              sparse = 0.99)
 
+# Bind Term Document Matrix results to reviews.mod
+reviews.mod = data.frame(reviews.mod,
+                         as.data.frame(t(data.matrix(reviews.mod.tdm))))
+
 #------------------------------------------------------------------------------
-# Model-based
+# Train-Test Split
 #------------------------------------------------------------------------------
-
-# Split data
-set.seed(123)
-trn.idx.eda = createDataPartition(reviews.mod$helpful.bins,
-                                  p = 0.25,
-                                  list = F)
-
-# Validate split; target = 0.25
-length(trn.idx.eda) / nrow(reviews.mod)
-
-#==============================================================================
-# Model Build
-#==============================================================================
-
-# Split data
+# Create train index
 set.seed(123)
 trn.idx = createDataPartition(reviews.mod$helpful.bins,
                               p = 0.70,
                               list = F)
 
+# Create test index
+#   Note: This is a little tricky because row names are not consecutive, since
+#   "reviews.mod" is a subset of "reviews", "trn.idx" does not contain the row
+#   names, but the row index.
+tst.idx = as.matrix(match(as.integer(rownames(reviews.mod))[-trn.idx], 
+                          rownames(reviews.mod)))
+
+# Validate indexes
+temp = rbind(reviews.mod[trn.idx, ], reviews.mod[tst.idx, ])
+temp = temp[order(as.numeric(rownames(temp))), ]
+identical(reviews.mod, temp); rm(temp)
+
 # Validate split; target = 0.70
 length(trn.idx) / nrow(reviews.mod)
 
+# Create sub-sample index (for early modeling)
+#   Note: This runs into similar issues as "tst.idx" above. The sub-sample must
+#   not contain any of the rows in "tst.idx". The code below actually works as
+#   it should, but to reference the subset of "reviews.mod", you must use
+#   "reviews.mod[trn.idx, ][trn.idx.sub, ]" as "reviews.mod[trn.idx.sub, ]"
+#   will produce an object which contains rows in "reviews.mod[tst.idx, ]".
+set.seed(123)
+trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
+                                  p = 0.15,
+                                  list = F)
+
+#==============================================================================
+# Model Build
+#==============================================================================
+# Note: various models built, organized by type, then model number(s)
+# Note: models below currently use sub-sample to build model, but predict
+#   on full test set
+
 #------------------------------------------------------------------------------
-# Additional Prep
+# Random Forest
 #------------------------------------------------------------------------------
 
+#--------------------------------------
+# Model 1 | train sub-sample | mtry
+#--------------------------------------
+# Note: model fits well in-sample (99.97% accuracy), but not out-of-sample
+#   (62.39% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~3.5 mins
 
+# Use randomForest::tuneRF() for baseline model
+#   mtry = 28
+ptm = proc.time()
+set.seed(55555)
+rf.Tune = tuneRF(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
+                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
+                 ntreeTry = 150,
+                 stepFactor = 1.5,
+                 improve = 0.05,  
+                 trace = TRUE,
+                 plot = TRUE)
+proc.time() - ptm; rm(ptm)
+
+# Specify fit parameters
+parRF.m1.fc = trainControl(method = "none")
+parRF.m1.grid = data.frame(mtry = 28)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m1 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
+                 y = reviews.mod[trn.idx, 13][trn.idx.sub], 
+                 method = "parRF", 
+                 trControl = parRF.m1.fc, 
+                 tuneGrid = parRF.m1.grid, 
+                 preProcess = c("center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m1
+parRF.m1$finalModel
+varImp(parRF.m1)
+plot(varImp(parRF.m1))
+
+# In-sample
+parRF.m1.trn.pred = predict(parRF.m1,
+                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
+parRF.m1.trn.cm = confusionMatrix(parRF.m1.trn.pred,
+                                  reviews.mod$helpful.bins
+                                  [trn.idx][trn.idx.sub])
+
+# Out-of-sample
+parRF.m1.tst.pred = predict(parRF.m1,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m1.tst.cm = confusionMatrix(parRF.m1.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m1, file = file.path(getwd(), "parRF.m1.RData"))
+
+#--------------------------------------
+# Model 2 | train sample | mtry
+#--------------------------------------
+# Note: model fits well in-sample (99.88% accuracy), but not out-of-sample
+#   (62.85% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~36.5 mins
+
+# Specify fit parameters
+parRF.m2.fc = trainControl(method = "none")
+parRF.m2.grid = data.frame(mtry = 28)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m2 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
+                 y = reviews.mod[trn.idx, 13], 
+                 method = "parRF", 
+                 trControl = parRF.m2.fc, 
+                 tuneGrid = parRF.m2.grid, 
+                 preProcess = c("center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m2
+parRF.m2$finalModel
+varImp(parRF.m2)
+plot(varImp(parRF.m2))
+
+# In-sample
+parRF.m2.trn.pred = predict(parRF.m2,
+                            newdata = reviews.mod[trn.idx, ])
+parRF.m2.trn.cm = confusionMatrix(parRF.m2.trn.pred,
+                                  reviews.mod$helpful.bins[trn.idx])
+
+# Out-of-sample
+parRF.m2.tst.pred = predict(parRF.m2,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m2.tst.cm = confusionMatrix(parRF.m2.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m2, file = file.path(getwd(), "parRF.m2.RData"))
+
+#--------------------------------------
+# Model 3 | train sub-sample | cv
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (62.47% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~211.0 mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m3.fc = trainControl(method = "cv",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m3 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
+                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
+                 method = "parRF",
+                 trControl = parRF.m3.fc,
+                 preProcess = c("center", "scale"),
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m3
+parRF.m3$finalModel
+varImp(parRF.m3)
+plot(varImp(parRF.m3))
+
+# In-sample
+parRF.m3.trn.pred = predict(parRF.m3,
+                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
+parRF.m3.trn.cm = confusionMatrix(parRF.m3.trn.pred,
+                                  reviews.mod$helpful.bins
+                                  [trn.idx][trn.idx.sub])
+
+# Out-of-sample
+parRF.m3.tst.pred = predict(parRF.m3,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m3.tst.cm = confusionMatrix(parRF.m3.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m3, file = file.path(getwd(), "parRF.m3.RData"))
+
+#--------------------------------------
+# Model 4 | train sample | cv
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX.X mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m4.fc = trainControl(method = "cv",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m4 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
+                 y = reviews.mod[trn.idx, 13], 
+                 method = "parRF", 
+                 trControl = parRF.m4.fc, 
+                 preProcess = c("center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m4
+parRF.m4$finalModel
+varImp(parRF.m4)
+plot(varImp(parRF.m4))
+
+# In-sample
+parRF.m4.trn.pred = predict(parRF.m4,
+                            newdata = reviews.mod[trn.idx, ])
+parRF.m4.trn.cm = confusionMatrix(parRF.m4.trn.pred,
+                                  reviews.mod$helpful.bins[trn.idx])
+
+# Out-of-sample
+parRF.m4.tst.pred = predict(parRF.m4,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m4.tst.cm = confusionMatrix(parRF.m4.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m4, file = file.path(getwd(), "parRF.m4.RData"))
+
+#--------------------------------------
+# Model 5 | train sub-sample | rcv
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX.X mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m5.fc = trainControl(method = "repeatedcv",
+                           repeats = 3,
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m5 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
+                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
+                 method = "parRF",
+                 trControl = parRF.m5.fc,
+                 preProcess = c("center", "scale"),
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m5
+parRF.m5$finalModel
+varImp(parRF.m5)
+plot(varImp(parRF.m5))
+
+# In-sample
+parRF.m5.trn.pred = predict(parRF.m5,
+                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
+parRF.m5.trn.cm = confusionMatrix(parRF.m5.trn.pred,
+                                  reviews.mod$helpful.bins
+                                  [trn.idx][trn.idx.sub])
+
+# Out-of-sample
+parRF.m5.tst.pred = predict(parRF.m5,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m5.tst.cm = confusionMatrix(parRF.m5.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m5, file = file.path(getwd(), "parRF.m5.RData"))
+
+#--------------------------------------
+# Model 6 | train sample | rcv
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX.X mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m6.fc = trainControl(method = "repeatedcv",
+                           repeats = 3,
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m6 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
+                 y = reviews.mod[trn.idx, 13], 
+                 method = "parRF", 
+                 trControl = parRF.m6.fc, 
+                 preProcess = c("center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m6
+parRF.m6$finalModel
+varImp(parRF.m6)
+plot(varImp(parRF.m6))
+
+# In-sample
+parRF.m6.trn.pred = predict(parRF.m6,
+                            newdata = reviews.mod[trn.idx, ])
+parRF.m6.trn.cm = confusionMatrix(parRF.m6.trn.pred,
+                                  reviews.mod$helpful.bins[trn.idx])
+
+# Out-of-sample
+parRF.m6.tst.pred = predict(parRF.m6,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m6.tst.cm = confusionMatrix(parRF.m6.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m6, file = file.path(getwd(), "parRF.m6.RData"))
+
+#--------------------------------------
+# Model 7 | train sub-sample | oob
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX.X mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m7.fc = trainControl(method = "oob",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m7 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
+                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
+                 method = "parRF",
+                 trControl = parRF.m7.fc,
+                 preProcess = c("center", "scale"),
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m7
+parRF.m7$finalModel
+varImp(parRF.m7)
+plot(varImp(parRF.m7))
+
+# In-sample
+parRF.m7.trn.pred = predict(parRF.m7,
+                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
+parRF.m7.trn.cm = confusionMatrix(parRF.m7.trn.pred,
+                                  reviews.mod$helpful.bins
+                                  [trn.idx][trn.idx.sub])
+
+# Out-of-sample
+parRF.m7.tst.pred = predict(parRF.m7,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m7.tst.cm = confusionMatrix(parRF.m7.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m7, file = file.path(getwd(), "parRF.m7.RData"))
+
+#--------------------------------------
+# Model 8 | train sample | oob
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX.X mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m8.fc = trainControl(method = "oob",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m8 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
+                 y = reviews.mod[trn.idx, 13], 
+                 method = "parRF", 
+                 trControl = parRF.m8.fc, 
+                 preProcess = c("center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m8
+parRF.m8$finalModel
+varImp(parRF.m8)
+plot(varImp(parRF.m8))
+
+# In-sample
+parRF.m8.trn.pred = predict(parRF.m8,
+                            newdata = reviews.mod[trn.idx, ])
+parRF.m8.trn.cm = confusionMatrix(parRF.m8.trn.pred,
+                                  reviews.mod$helpful.bins[trn.idx])
+
+# Out-of-sample
+parRF.m8.tst.pred = predict(parRF.m8,
+                            newdata = reviews.mod[tst.idx, ])
+parRF.m8.tst.cm = confusionMatrix(parRF.m8.tst.pred,
+                                  reviews.mod$helpful.bins[tst.idx])
+
+# Save model
+save(parRF.m8, file = file.path(getwd(), "parRF.m8.RData"))
 
 #------------------------------------------------------------------------------
-# Model_Type_01
-#------------------------------------------------------------------------------
-
-# Lorem ipsum
-
-#------------------------------------------------------------------------------
-# Model_Type_02
+# Support Vector Machine
 #------------------------------------------------------------------------------
 
 # Lorem ipsum
@@ -414,3 +854,4 @@ length(trn.idx) / nrow(reviews.mod)
 # FIN
 #==============================================================================
 sessionInfo()
+
