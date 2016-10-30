@@ -220,10 +220,10 @@ reviews$reviewerID = as.factor(reviews$reviewerID)
 reviews$asin = as.factor(reviews$asin)
 
 # Create additional variables
-reviews$reviewText.count = sapply(gregexpr("\\W+",
+reviews$reviewText.count = sapply(gregexpr("\\S+",
                                            reviews$reviewText),
                                   length)
-reviews$summary.count = sapply(gregexpr("\\W+",
+reviews$summary.count = sapply(gregexpr("\\S+",
                                         reviews$summary),
                                length)
 reviews$time.stamp = as.Date(as.POSIXct(reviews$unixReviewTime,
@@ -606,8 +606,8 @@ words.stats.sub.afinn = reviews.words.stats.sub %>%
 #--------------------------------------
 # Plots
 #--------------------------------------
-# Boxplot of sentiment score by overall.num
-ggplot(words.afinn, 
+# Boxplot of AFINN score by overall.num
+ggplot(data = words.afinn, 
        aes(overall.num, 
            afinn.score.mean, 
            group = overall.num)) +
@@ -617,7 +617,7 @@ ggplot(words.afinn,
          y = "Mean Sentiment Score")
 
 # Scatterplot of review words by quantity and overall rating
-ggplot(words.stats.sub,
+ggplot(data = words.stats.sub,
        aes(reviews, 
            average.overall)) +
     geom_point() +
@@ -634,7 +634,7 @@ ggplot(words.stats.sub,
          y = "Overall Rating")
 
 # Boxplot of mean overall ratings of reviews with words by AFINN score
-ggplot(words.stats.sub.afinn,
+ggplot(data = words.stats.sub.afinn,
        aes(afinn.score,
            average.overall,
            group = afinn.score)) +
@@ -647,11 +647,105 @@ ggplot(words.stats.sub.afinn,
 # Review Level
 #------------------------------------------------------------------------------
 
+#--------------------------------------
+# Variable: reviewText
+#--------------------------------------
+# Conduct sentiment analysis on reviewText
+sent.reviewText = get_nrc_sentiment(reviews$reviewText)
 
+# Create dataset with sentiment totals
+sent.reviewText.tot = data.frame(colSums(sent.reviewText))
+names(sent.reviewText.tot) = "count"
+sent.reviewText.tot = cbind("sentiment" = rownames(sent.reviewText.tot),
+                            sent.reviewText.tot)
+rownames(sent.reviewText.tot) = NULL
+
+#--------------------------------------
+# Variable: summary
+#--------------------------------------
+# Conduct sentiment analysis on summary
+sent.summaryText = get_nrc_sentiment(reviews$summary)
+
+# Create dataset with sentiment totals
+sent.summaryText.tot = data.frame(colSums(sent.summaryText))
+names(sent.summaryText.tot) = "count"
+sent.summaryText.tot = cbind("sentiment" = rownames(sent.summaryText.tot),
+                            sent.summaryText.tot)
+rownames(sent.summaryText.tot) = NULL
+
+#--------------------------------------
+# Sentiment dataset
+#--------------------------------------
+# Add prefix to reviewText variables before joining
+colnames(sent.reviewText) = paste("RT",
+                                  colnames(sent.reviewText),
+                                  sep = "_")
+
+# Add prefix to summaryText variables before joining
+colnames(sent.summaryText) = paste("ST",
+                                   colnames(sent.summaryText),
+                                   sep = "_")
+
+# Create clone of reviews and join sentiment variables
+reviews.sent = cbind(reviews,
+                     sent.reviewText,
+                     sent.summaryText)
+
+# Create additional variables
+reviews.sent$RT_posneg = reviews.sent$RT_positive - reviews.sent$RT_negative
+reviews.sent$ST_posneg = reviews.sent$ST_positive - reviews.sent$ST_negative
+
+#--------------------------------------
+# Plots
+#--------------------------------------
+# Total sentiment score based on review text by adjective
+ggplot(data = sent.reviewText.tot,
+       aes(x = sentiment,
+           y = count)) +
+    geom_bar(aes(fill = sentiment),
+             stat = "identity") +
+    theme(legend.position = "none") +
+    labs(title = "Total Sentiment Score for Review Text",
+         x = "Sentiment - Review Text",
+         y = "Total Count")
+
+# Total sentiment score based on summary text by adjective
+ggplot(data = sent.summaryText.tot,
+       aes(x = sentiment,
+           y = count)) +
+    geom_bar(aes(fill = sentiment), stat = "identity") +
+    theme(legend.position = "none") +
+    labs(title = "Total Sentiment Score for Summary Review Text",
+         x = "Sentiment - Summary Review Text",
+         y = "Total Count")
+
+# Boxplot of sentiment score of review text by overall rating
+ggplot(data = reviews.sent,
+       aes(overall.num,
+           RT_posneg,
+           group = overall.num)) +
+    geom_boxplot() +
+    labs(title = "Sentiment of Review Text by Overall Rating",
+         x = "Overall Rating",
+         y = "Positive Less Negative Score")
+
+# Boxplot of sentiment score of summary text by overall rating
+ggplot(data = reviews.sent,
+       aes(overall.num,
+           ST_posneg,
+           group = overall.num)) +
+    geom_boxplot() +
+    labs(title = "Sentiment of Summary Review Text by Overall Rating",
+         x = "Overall Rating",
+         y = "Positive Less Negative Score")
 
 #==============================================================================
 # S07 - Model Prep
 #==============================================================================
+
+###############################################################################
+## NOTE: should we include this for the assignment?                          ##
+###############################################################################
 
 # Create version of reviews for modeling
 reviews.mod = reviews.eda
