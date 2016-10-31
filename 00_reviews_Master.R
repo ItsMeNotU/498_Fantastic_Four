@@ -25,7 +25,7 @@ library(wordcloud)
 #==============================================================================
 # S00 | Table of Contents
 #==============================================================================
-# To quickly get to a section search for "SX" where X corresponds below:
+# To quickly get to a section search for "S{X}" where {X} corresponds below:
 #   S00 - Table of Contents
 #   S01 - Functions
 #   S02 - API Call
@@ -78,7 +78,7 @@ text.clean = function(df, stop.words, sparse, freq = FALSE){
         warning("Frequency argument ignored when sparse value given.")
     }
     # Basic cleaning functions
-    temp = Corpus(VectorSource(df))
+    temp = Corpus(VectorSource(paste(df, collapse = " ")))
     temp = tm_map(temp, content_transformer(tolower))
     temp = tm_map(temp, removeNumbers)
     temp = tm_map(temp, removePunctuation)
@@ -599,7 +599,7 @@ words.stats.sub %>%
 
 # Score subset using AFINN lexicon, scores range from {-5, 5}
 #   Note: Very few observations, looks like some words do not exist in AFINN,
-#   e.g. absolutely.
+#   (e.g. absolutely) and therefore are not represented here.
 words.stats.sub.afinn = reviews.words.stats.sub %>% 
                             inner_join(AFINN)
 
@@ -608,8 +608,8 @@ words.stats.sub.afinn = reviews.words.stats.sub %>%
 #--------------------------------------
 # Boxplot of AFINN score by overall.num
 ggplot(data = words.afinn, 
-       aes(overall.num, 
-           afinn.score.mean, 
+       aes(x = overall.num, 
+           y = afinn.score.mean, 
            group = overall.num)) +
     geom_boxplot() +
     labs(title = "Mean AFINN Score by Overall Product Rating",
@@ -618,8 +618,8 @@ ggplot(data = words.afinn,
 
 # Scatterplot of review words by quantity and overall rating
 ggplot(data = words.stats.sub,
-       aes(reviews, 
-           average.overall)) +
+       aes(x = reviews, 
+           y = average.overall)) +
     geom_point() +
     geom_text(aes(label = word), 
               check_overlap = TRUE, 
@@ -635,8 +635,8 @@ ggplot(data = words.stats.sub,
 
 # Boxplot of mean overall ratings of reviews with words by AFINN score
 ggplot(data = words.stats.sub.afinn,
-       aes(afinn.score,
-           average.overall,
+       aes(x = afinn.score,
+           y = average.overall,
            group = afinn.score)) +
     geom_boxplot() +
     labs(title = "AFINN Score of Keywords by Mean Overall Rating of Review",
@@ -721,8 +721,8 @@ ggplot(data = sent.summaryText.tot,
 
 # Boxplot of sentiment score of review text by overall rating
 ggplot(data = reviews.sent,
-       aes(overall.num,
-           RT_posneg,
+       aes(x = overall.num,
+           y = RT_posneg,
            group = overall.num)) +
     geom_boxplot() +
     labs(title = "Sentiment of Review Text by Overall Rating",
@@ -731,8 +731,8 @@ ggplot(data = reviews.sent,
 
 # Boxplot of sentiment score of summary text by overall rating
 ggplot(data = reviews.sent,
-       aes(overall.num,
-           ST_posneg,
+       aes(x = overall.num,
+           y = ST_posneg,
            group = overall.num)) +
     geom_boxplot() +
     labs(title = "Sentiment of Summary Review Text by Overall Rating",
