@@ -352,7 +352,7 @@ count.overall.fs = reviews.eda %>%
 #------------------------------------------------------------------------------
 # Traditional - Qualitative
 #------------------------------------------------------------------------------
-# Histogram of overall ratings
+# Barplot of overall ratings
 ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
@@ -361,16 +361,16 @@ ggplot(data = reviews.eda,
              color = "white",
              size = 3.5,
              geom = "text") +
-    labs(title = "Histogram of Overall Product Ratings",
+    labs(title = "Barplot of Overall Product Ratings",
          x = "Overall Rating",
          y = "Count")
 
-# Histogram of overall ratings by year
+# Barplot of overall ratings by year
 ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
-    labs(title = "Histogram of Overall Product Ratings",
+    labs(title = "Barplot of Overall Product Ratings",
          x = "Overall Rating",
          y = "Count")
 
@@ -383,7 +383,7 @@ ggplot(data = count.overall.asin,
          x = "Mean Overall Rating\n(rounded to nearest 1/8)",
          y = "Count")
 
-# Histogram of helpful bins
+# Barplot of helpful bins
 ggplot(data = reviews.eda,
        aes(x = helpful.bins)) +
     geom_bar(fill = "grey50") +
@@ -392,16 +392,16 @@ ggplot(data = reviews.eda,
                color = "white",
                size = 3.5,
                geom = "text") +
-    labs(title = "Histogram of Product Ratings by Helpful Bins",
+    labs(title = "Barplot of Product Ratings by Helpful Bins",
          x = "Helpful Bins",
          y = "Count")
 
-# Histogram of helpful bins by year
+# Barplot of helpful bins by year
 ggplot(data = reviews.eda,
        aes(x = helpful.bins)) +
     geom_bar(fill = "grey50") +
     facet_wrap(~time.year) +
-    labs(title = "Histogram of Product Ratings by Helpful Bins",
+    labs(title = "Barplot of Product Ratings by Helpful Bins",
          x = "Helpful Bins",
          y = "Count")
 
@@ -629,7 +629,7 @@ ggplot(data = words.stats.sub,
     geom_hline(yintercept = mean(reviews$overall.num), 
                color = "red", 
                lty = 2) +
-    labs(title = "Review Words by Quantity and Overall Product Rating",
+    labs(title = "Review Keywords by Quantity and Overall Product Rating",
          x = "Number of Reviews",
          y = "Overall Rating")
 
