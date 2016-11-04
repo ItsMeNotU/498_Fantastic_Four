@@ -29,12 +29,13 @@ library(wordcloud)
 #   S00 - Table of Contents
 #   S01 - Functions
 #   S02 - API Call
-#   S03 - Data Import, Prep, and Staging
+#   S03 - Data Import, Quality Check, and Prep
 #   S04 - EDA
 #   S05 - Text Analysis
 #   S06 - Sentiment Analysis
-#   S07 - Model Prep
-#   S08 - Model Build
+#   S07 - TF-IDF
+#   S08 - Model Prep
+#   S09 - Model Build
 
 #==============================================================================
 # S01 | Functions
@@ -77,8 +78,14 @@ text.clean = function(df, stop.words, sparse, freq = FALSE){
     if (!missing(sparse) && freq){
         warning("Frequency argument ignored when sparse value given.")
     }
+    # Create corpus
+    if (!freq){
+        temp = Corpus(VectorSource(df))
+    }
+    if (freq){
+        temp = Corpus(VectorSource(paste(df, collapse = " ")))
+    }
     # Basic cleaning functions
-    temp = Corpus(VectorSource(paste(df, collapse = " ")))
     temp = tm_map(temp, content_transformer(tolower))
     temp = tm_map(temp, removeNumbers)
     temp = tm_map(temp, removePunctuation)
@@ -128,7 +135,7 @@ raw.content = rawToChar(raw.result$content)
 api.content = fromJSON(raw.content)
 
 #==============================================================================
-# S03 - Data Import, Prep, and Staging
+# S03 - Data Import, Quality Check, and Prep
 #==============================================================================
 
 #------------------------------------------------------------------------------
@@ -140,9 +147,9 @@ reviews = stream_in(file("reviews_Grocery_and_Gourmet_Food_5.json.gz"))
 # View structure
 str(reviews)
 
-#--------------------------------------
-# Data Quality Check
-#--------------------------------------
+#------------------------------------------------------------------------------
+# Quality Check
+#------------------------------------------------------------------------------
 # Check for duplicated rows
 anyDuplicated(reviews,
               fromLast = TRUE)
@@ -152,12 +159,12 @@ anyDuplicated(reviews[c("reviewerID", "asin")],
 # Add a primary key to use for convenience
 reviews$reviewsPK = seq.int(nrow(reviews))
 
-# Reorder to put reviews.pk first
+# Reorder to put reviewsPK first
 reviews = reviews[c(10, 1:9)]
 
-#------------------
+#--------------------------------------
 # Missing Values
-#------------------
+#--------------------------------------
 # Check for NA values
 colSums(is.na(reviews))[colSums(is.na(reviews)) > 0]
 
@@ -235,19 +242,12 @@ reviews$time.year = as.factor(substr(reviews$time.stamp, 1, 4))
 # Drop helpful
 reviews = subset(reviews, select = -c(helpful))
 
-#------------------------------------------------------------------------------
-# Staging
-#------------------------------------------------------------------------------
-# Subset reviews for EDA, text mining, and modeling
-reviews.eda = reviews[reviews$helpful.nan == 0, ]
-
 #==============================================================================
 # S04 - EDA
 #==============================================================================
 
-###############################################################################
-## NOTE: this only examines reviews which received a vote for helpfulness    ##
-###############################################################################
+# Subset reviews for EDA
+reviews.eda = reviews[reviews$helpful.nan == 0, ]
 
 #------------------------------------------------------------------------------
 # Traditional - Quantitative
@@ -357,10 +357,10 @@ ggplot(data = reviews.eda,
        aes(x = overall.fac)) +
     geom_bar(fill = "grey50") +
     stat_count(aes(label = ..count..),
-             vjust = 1.6,
-             color = "white",
-             size = 3.5,
-             geom = "text") +
+               vjust = 1.6,
+               color = "white",
+               size = 3.5,
+               geom = "text") +
     labs(title = "Barplot of Overall Product Ratings",
          x = "Overall Rating",
          y = "Count")
@@ -420,10 +420,6 @@ ggplot(data = reviews.eda %>%
 # S05 - Text Analysis
 #==============================================================================
 
-###############################################################################
-## NOTE: this only examines reviews which received a vote for helpfulness    ##
-###############################################################################
-
 #------------------------------------------------------------------------------
 # Word Counts (Mean)
 #------------------------------------------------------------------------------
@@ -447,7 +443,7 @@ count.reviewText = data.frame(Levels = levels(reviews.eda$helpful.bins),
                                         mean.reviewText.up))
 
 #--------------------------------------
-# Variable: summary
+# Variable: summary.count
 #--------------------------------------
 # Mean word count for summary by helpful bins
 mean.summary.lo = round(mean(reviews.eda$summary.count
@@ -534,13 +530,13 @@ stop.list = c("also",
 #==============================================================================
 # S06 - Sentiment Analysis
 #==============================================================================
-# Link: http://bit.ly/2apeTZl
+# More info: http://bit.ly/2apeTZl
 
 #------------------------------------------------------------------------------
 # Word Level
 #------------------------------------------------------------------------------
 # Create tidy dataset (long) of key words by reviewsPK
-words = reviews %>%
+words = reviews.eda %>%
             tbl_df() %>%
             select(reviewsPK,
                    reviewerID,
@@ -560,10 +556,10 @@ AFINN = sentiments %>%
 
 # Now join scores back to words
 words.afinn = words %>%
-                  inner_join(AFINN, 
-                      by = "word") %>%
+                  inner_join(AFINN,
+                             by = "word") %>%
                   group_by(reviewsPK,
-                          overall.num) %>%
+                           overall.num) %>%
                   summarize(afinn.score.mean = mean(afinn.score))
 
 # Collapse and add count of word frequency in each review
@@ -585,7 +581,7 @@ words.stats = words.count %>%
                   ungroup()
 
 # Create subset of summary statistics
-words.stats.sub = reviews.words.stats %>%
+words.stats.sub = words.stats %>%
                       filter(reviews >= 600,
                              products >= 20)
 
@@ -600,22 +596,12 @@ words.stats.sub %>%
 # Score subset using AFINN lexicon, scores range from {-5, 5}
 #   Note: Very few observations, looks like some words do not exist in AFINN,
 #   (e.g. absolutely) and therefore are not represented here.
-words.stats.sub.afinn = reviews.words.stats.sub %>% 
+words.stats.sub.afinn = words.stats.sub %>% 
                             inner_join(AFINN)
 
 #--------------------------------------
 # Plots
 #--------------------------------------
-# Boxplot of AFINN score by overall.num
-ggplot(data = words.afinn, 
-       aes(x = overall.num, 
-           y = afinn.score.mean, 
-           group = overall.num)) +
-    geom_boxplot() +
-    labs(title = "Mean AFINN Score by Overall Product Rating",
-         x = "Overall Rating",
-         y = "Mean Sentiment Score")
-
 # Scatterplot of review words by quantity and overall rating
 ggplot(data = words.stats.sub,
        aes(x = reviews, 
@@ -632,6 +618,16 @@ ggplot(data = words.stats.sub,
     labs(title = "Review Keywords by Quantity and Overall Product Rating",
          x = "Number of Reviews",
          y = "Overall Rating")
+
+# Boxplot of AFINN score by overall.num
+ggplot(data = words.afinn, 
+       aes(x = overall.num, 
+           y = afinn.score.mean, 
+           group = overall.num)) +
+    geom_boxplot() +
+    labs(title = "Mean AFINN Score by Overall Product Rating",
+         x = "Overall Rating",
+         y = "Mean Sentiment Score")
 
 # Boxplot of mean overall ratings of reviews with words by AFINN score
 ggplot(data = words.stats.sub.afinn,
@@ -651,7 +647,7 @@ ggplot(data = words.stats.sub.afinn,
 # Variable: reviewText
 #--------------------------------------
 # Conduct sentiment analysis on reviewText
-sent.reviewText = get_nrc_sentiment(reviews$reviewText)
+sent.reviewText = get_nrc_sentiment(reviews.eda$reviewText)
 
 # Create dataset with sentiment totals
 sent.reviewText.tot = data.frame(colSums(sent.reviewText))
@@ -664,36 +660,14 @@ rownames(sent.reviewText.tot) = NULL
 # Variable: summary
 #--------------------------------------
 # Conduct sentiment analysis on summary
-sent.summaryText = get_nrc_sentiment(reviews$summary)
+sent.summaryText = get_nrc_sentiment(reviews.eda$summary)
 
 # Create dataset with sentiment totals
 sent.summaryText.tot = data.frame(colSums(sent.summaryText))
 names(sent.summaryText.tot) = "count"
 sent.summaryText.tot = cbind("sentiment" = rownames(sent.summaryText.tot),
-                            sent.summaryText.tot)
+                             sent.summaryText.tot)
 rownames(sent.summaryText.tot) = NULL
-
-#--------------------------------------
-# Sentiment dataset
-#--------------------------------------
-# Add prefix to reviewText variables before joining
-colnames(sent.reviewText) = paste("RT",
-                                  colnames(sent.reviewText),
-                                  sep = "_")
-
-# Add prefix to summaryText variables before joining
-colnames(sent.summaryText) = paste("ST",
-                                   colnames(sent.summaryText),
-                                   sep = "_")
-
-# Create clone of reviews and join sentiment variables
-reviews.sent = cbind(reviews,
-                     sent.reviewText,
-                     sent.summaryText)
-
-# Create additional variables
-reviews.sent$RT_posneg = reviews.sent$RT_positive - reviews.sent$RT_negative
-reviews.sent$ST_posneg = reviews.sent$ST_positive - reviews.sent$ST_negative
 
 #--------------------------------------
 # Plots
@@ -719,6 +693,31 @@ ggplot(data = sent.summaryText.tot,
          x = "Sentiment - Summary Review Text",
          y = "Total Count")
 
+#------------------------------------------------------------------------------
+# Sentiment dataset
+#------------------------------------------------------------------------------
+# Add prefix to reviewText variables before joining
+colnames(sent.reviewText) = paste("RT",
+                                  colnames(sent.reviewText),
+                                  sep = "_")
+
+# Add prefix to summaryText variables before joining
+colnames(sent.summaryText) = paste("ST",
+                                   colnames(sent.summaryText),
+                                   sep = "_")
+
+# Create clone of reviews.eda and join sentiment variables
+reviews.sent = cbind(reviews.eda,
+                     sent.reviewText,
+                     sent.summaryText)
+
+# Create additional variables
+reviews.sent$RT_posneg = reviews.sent$RT_positive - reviews.sent$RT_negative
+reviews.sent$ST_posneg = reviews.sent$ST_positive - reviews.sent$ST_negative
+
+#--------------------------------------
+# Plots
+#--------------------------------------
 # Boxplot of sentiment score of review text by overall rating
 ggplot(data = reviews.sent,
        aes(x = overall.num,
@@ -740,15 +739,36 @@ ggplot(data = reviews.sent,
          y = "Positive Less Negative Score")
 
 #==============================================================================
-# S07 - Model Prep
+# S07 - TF-IDF
 #==============================================================================
 
-###############################################################################
-## NOTE: should we include this for the assignment?                          ##
-###############################################################################
+# Create version of reviews for TF-IDF analysis
+reviews.tfidf = reviews.sent
+
+# Isolate words in given review and count word frequency across all reviews
+tfidf = words %>% 
+            group_by(reviewsPK) %>%
+            mutate(n.wordInOneReview = n()) %>% 
+            ungroup()%>%
+            group_by(reviewsPK,word) %>%
+            mutate(n.wordInOneReview = n()) %>% 
+            ungroup()%>%
+            group_by(word)%>% distinct(reviewsPK) %>% 
+            mutate(n.wordInReviews=n())  %>% ungroup()
+
+nrow(unique(reviews.eda))
+
+#--------------------------------------
+# Plots
+#--------------------------------------
+
+
+#==============================================================================
+# S08 - Model Prep
+#==============================================================================
 
 # Create version of reviews for modeling
-reviews.mod = reviews.eda
+reviews.mod = reviews.tfidf
 
 #------------------------------------------------------------------------------
 # Text Cleaning
@@ -758,13 +778,13 @@ reviews.mod = reviews.eda
 #   2. Clean text using stop words
 #   3. Create Term Document Matrix
 #   4. Remove sparse terms
-reviews.mod.tdm = text.clean(reviews.mod$reviewText,
-                             stop.words = stop.list,
-                             sparse = 0.99)
+#reviews.mod.tdm = text.clean(reviews.mod$reviewText,
+#                             stop.words = stop.list,
+#                             sparse = 0.99)
 
 # Bind Term Document Matrix results to reviews.mod
-reviews.mod = data.frame(reviews.mod,
-                         as.data.frame(t(data.matrix(reviews.mod.tdm))))
+#reviews.mod = data.frame(reviews.mod,
+#                         as.data.frame(t(data.matrix(reviews.mod.tdm))))
 
 #------------------------------------------------------------------------------
 # Train-Test Split
@@ -802,7 +822,7 @@ trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
                                   list = F)
 
 #==============================================================================
-# S08 - Model Build
+# S09 - Model Build
 #==============================================================================
 # Note: various models built, organized by type, then model number(s)
 # Note: models below currently use sub-sample to build model, but predict
@@ -812,398 +832,7 @@ trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
 # Random Forest
 #------------------------------------------------------------------------------
 
-#--------------------------------------
-# Model 1 | train sub-sample | mtry
-#--------------------------------------
-# Note: model fits well in-sample (99.97% accuracy), but not out-of-sample
-#   (62.39% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~3.5 mins
-
-# Use randomForest::tuneRF() for baseline model
-#   mtry = 28
-ptm = proc.time()
-set.seed(55555)
-rf.Tune = tuneRF(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
-                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
-                 ntreeTry = 150,
-                 stepFactor = 1.5,
-                 improve = 0.05,  
-                 trace = TRUE,
-                 plot = TRUE)
-proc.time() - ptm; rm(ptm)
-
-# Specify fit parameters
-parRF.m1.fc = trainControl(method = "none")
-parRF.m1.grid = data.frame(mtry = 28)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m1 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
-                 y = reviews.mod[trn.idx, 13][trn.idx.sub], 
-                 method = "parRF", 
-                 trControl = parRF.m1.fc, 
-                 tuneGrid = parRF.m1.grid, 
-                 preProcess = c("center", "scale"), 
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m1
-parRF.m1$finalModel
-varImp(parRF.m1)
-plot(varImp(parRF.m1))
-
-# In-sample
-parRF.m1.trn.pred = predict(parRF.m1,
-                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
-parRF.m1.trn.cm = confusionMatrix(parRF.m1.trn.pred,
-                                  reviews.mod$helpful.bins
-                                  [trn.idx][trn.idx.sub])
-
-# Out-of-sample
-parRF.m1.tst.pred = predict(parRF.m1,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m1.tst.cm = confusionMatrix(parRF.m1.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m1, file = file.path(getwd(), "parRF.m1.RData"))
-
-#--------------------------------------
-# Model 2 | train sample | mtry
-#--------------------------------------
-# Note: model fits well in-sample (99.88% accuracy), but not out-of-sample
-#   (62.85% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~36.5 mins
-
-# Specify fit parameters
-parRF.m2.fc = trainControl(method = "none")
-parRF.m2.grid = data.frame(mtry = 28)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m2 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
-                 y = reviews.mod[trn.idx, 13], 
-                 method = "parRF", 
-                 trControl = parRF.m2.fc, 
-                 tuneGrid = parRF.m2.grid, 
-                 preProcess = c("center", "scale"), 
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m2
-parRF.m2$finalModel
-varImp(parRF.m2)
-plot(varImp(parRF.m2))
-
-# In-sample
-parRF.m2.trn.pred = predict(parRF.m2,
-                            newdata = reviews.mod[trn.idx, ])
-parRF.m2.trn.cm = confusionMatrix(parRF.m2.trn.pred,
-                                  reviews.mod$helpful.bins[trn.idx])
-
-# Out-of-sample
-parRF.m2.tst.pred = predict(parRF.m2,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m2.tst.cm = confusionMatrix(parRF.m2.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m2, file = file.path(getwd(), "parRF.m2.RData"))
-
-#--------------------------------------
-# Model 3 | train sub-sample | cv
-#--------------------------------------
-# Note: model fits well in-sample (100% accuracy), but not out-of-sample
-#   (62.47% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~211.0 mins
-
-# Specify fit parameters
-set.seed(55555)
-parRF.m3.fc = trainControl(method = "cv",
-                           returnResamp = "all",
-                           verboseIter = TRUE)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m3 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
-                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
-                 method = "parRF",
-                 trControl = parRF.m3.fc,
-                 preProcess = c("center", "scale"),
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m3
-parRF.m3$finalModel
-varImp(parRF.m3)
-plot(varImp(parRF.m3))
-
-# In-sample
-parRF.m3.trn.pred = predict(parRF.m3,
-                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
-parRF.m3.trn.cm = confusionMatrix(parRF.m3.trn.pred,
-                                  reviews.mod$helpful.bins
-                                  [trn.idx][trn.idx.sub])
-
-# Out-of-sample
-parRF.m3.tst.pred = predict(parRF.m3,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m3.tst.cm = confusionMatrix(parRF.m3.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m3, file = file.path(getwd(), "parRF.m3.RData"))
-
-#--------------------------------------
-# Model 4 | train sample | cv
-#--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX.X mins
-
-# Specify fit parameters
-set.seed(55555)
-parRF.m4.fc = trainControl(method = "cv",
-                           returnResamp = "all",
-                           verboseIter = TRUE)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m4 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
-                 y = reviews.mod[trn.idx, 13], 
-                 method = "parRF", 
-                 trControl = parRF.m4.fc, 
-                 preProcess = c("center", "scale"), 
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m4
-parRF.m4$finalModel
-varImp(parRF.m4)
-plot(varImp(parRF.m4))
-
-# In-sample
-parRF.m4.trn.pred = predict(parRF.m4,
-                            newdata = reviews.mod[trn.idx, ])
-parRF.m4.trn.cm = confusionMatrix(parRF.m4.trn.pred,
-                                  reviews.mod$helpful.bins[trn.idx])
-
-# Out-of-sample
-parRF.m4.tst.pred = predict(parRF.m4,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m4.tst.cm = confusionMatrix(parRF.m4.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m4, file = file.path(getwd(), "parRF.m4.RData"))
-
-#--------------------------------------
-# Model 5 | train sub-sample | rcv
-#--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX.X mins
-
-# Specify fit parameters
-set.seed(55555)
-parRF.m5.fc = trainControl(method = "repeatedcv",
-                           repeats = 3,
-                           returnResamp = "all",
-                           verboseIter = TRUE)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m5 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
-                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
-                 method = "parRF",
-                 trControl = parRF.m5.fc,
-                 preProcess = c("center", "scale"),
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m5
-parRF.m5$finalModel
-varImp(parRF.m5)
-plot(varImp(parRF.m5))
-
-# In-sample
-parRF.m5.trn.pred = predict(parRF.m5,
-                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
-parRF.m5.trn.cm = confusionMatrix(parRF.m5.trn.pred,
-                                  reviews.mod$helpful.bins
-                                  [trn.idx][trn.idx.sub])
-
-# Out-of-sample
-parRF.m5.tst.pred = predict(parRF.m5,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m5.tst.cm = confusionMatrix(parRF.m5.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m5, file = file.path(getwd(), "parRF.m5.RData"))
-
-#--------------------------------------
-# Model 6 | train sample | rcv
-#--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX.X mins
-
-# Specify fit parameters
-set.seed(55555)
-parRF.m6.fc = trainControl(method = "repeatedcv",
-                           repeats = 3,
-                           returnResamp = "all",
-                           verboseIter = TRUE)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m6 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
-                 y = reviews.mod[trn.idx, 13], 
-                 method = "parRF", 
-                 trControl = parRF.m6.fc, 
-                 preProcess = c("center", "scale"), 
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m6
-parRF.m6$finalModel
-varImp(parRF.m6)
-plot(varImp(parRF.m6))
-
-# In-sample
-parRF.m6.trn.pred = predict(parRF.m6,
-                            newdata = reviews.mod[trn.idx, ])
-parRF.m6.trn.cm = confusionMatrix(parRF.m6.trn.pred,
-                                  reviews.mod$helpful.bins[trn.idx])
-
-# Out-of-sample
-parRF.m6.tst.pred = predict(parRF.m6,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m6.tst.cm = confusionMatrix(parRF.m6.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m6, file = file.path(getwd(), "parRF.m6.RData"))
-
-#--------------------------------------
-# Model 7 | train sub-sample | oob
-#--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX.X mins
-
-# Specify fit parameters
-set.seed(55555)
-parRF.m7.fc = trainControl(method = "oob",
-                           returnResamp = "all",
-                           verboseIter = TRUE)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m7 = train(x = reviews.mod[trn.idx, -c(1:13, 17)][trn.idx.sub, ], 
-                 y = reviews.mod[trn.idx, 13][trn.idx.sub],
-                 method = "parRF",
-                 trControl = parRF.m7.fc,
-                 preProcess = c("center", "scale"),
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m7
-parRF.m7$finalModel
-varImp(parRF.m7)
-plot(varImp(parRF.m7))
-
-# In-sample
-parRF.m7.trn.pred = predict(parRF.m7,
-                            newdata = reviews.mod[trn.idx, ][trn.idx.sub, ])
-parRF.m7.trn.cm = confusionMatrix(parRF.m7.trn.pred,
-                                  reviews.mod$helpful.bins
-                                  [trn.idx][trn.idx.sub])
-
-# Out-of-sample
-parRF.m7.tst.pred = predict(parRF.m7,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m7.tst.cm = confusionMatrix(parRF.m7.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m7, file = file.path(getwd(), "parRF.m7.RData"))
-
-#--------------------------------------
-# Model 8 | train sample | oob
-#--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX.X mins
-
-# Specify fit parameters
-set.seed(55555)
-parRF.m8.fc = trainControl(method = "oob",
-                           returnResamp = "all",
-                           verboseIter = TRUE)
-
-# Run model
-registerDoParallel(2)
-ptm = proc.time()
-set.seed(55555)
-parRF.m8 = train(x = reviews.mod[trn.idx, -c(1:13, 17)], 
-                 y = reviews.mod[trn.idx, 13], 
-                 method = "parRF", 
-                 trControl = parRF.m8.fc, 
-                 preProcess = c("center", "scale"), 
-                 verbose = TRUE)
-proc.time() - ptm; rm(ptm)
-closeAllConnections()
-
-# Summary information
-parRF.m8
-parRF.m8$finalModel
-varImp(parRF.m8)
-plot(varImp(parRF.m8))
-
-# In-sample
-parRF.m8.trn.pred = predict(parRF.m8,
-                            newdata = reviews.mod[trn.idx, ])
-parRF.m8.trn.cm = confusionMatrix(parRF.m8.trn.pred,
-                                  reviews.mod$helpful.bins[trn.idx])
-
-# Out-of-sample
-parRF.m8.tst.pred = predict(parRF.m8,
-                            newdata = reviews.mod[tst.idx, ])
-parRF.m8.tst.cm = confusionMatrix(parRF.m8.tst.pred,
-                                  reviews.mod$helpful.bins[tst.idx])
-
-# Save model
-save(parRF.m8, file = file.path(getwd(), "parRF.m8.RData"))
+# Lorem ipsum
 
 #------------------------------------------------------------------------------
 # Support Vector Machine
