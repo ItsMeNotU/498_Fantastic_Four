@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-10-30 by MJG
+# Last Updated: 2016-11-07 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -199,7 +199,7 @@ reviews %>%
 reviews$reviewerName[is.na(reviews$reviewerName)] = ""
 
 # Tidy workspace
-rm(list=ls(pattern = "miss"))
+rm(list=ls(pattern = "^miss"))
 
 #------------------------------------------------------------------------------
 # Prep
@@ -425,7 +425,7 @@ ggplot(data = reviews.eda %>%
 #------------------------------------------------------------------------------
 
 #--------------------------------------
-# Variable: helpful.bins
+# Variable: reviewText.count
 #--------------------------------------
 # Mean word count for review text by helpful bins
 mean.reviewText.lo = round(mean(reviews.eda$reviewText.count
@@ -834,6 +834,14 @@ ggplot(data = tfidf[tfidf$tfidf > 5, ],
          x = "Word\n(Only TF-IDF Score > 5 Shown)",
          y = "TF-IDF")
 
+#------------------------------------------------------------------------------
+# TF-IDF dataset
+#------------------------------------------------------------------------------
+
+###############################################################################
+# TODO
+###############################################################################
+
 #==============================================================================
 # S08 - Model Prep
 #==============================================================================
@@ -841,21 +849,9 @@ ggplot(data = tfidf[tfidf$tfidf > 5, ],
 # Create version of reviews for modeling
 reviews.mod = reviews.tfidf
 
-#------------------------------------------------------------------------------
-# Text Cleaning
-#------------------------------------------------------------------------------
-# Four steps:
-#   1. Create corpus
-#   2. Clean text using stop words
-#   3. Create Term Document Matrix
-#   4. Remove sparse terms
-#reviews.mod.tdm = text.clean(reviews.mod$reviewText,
-#                             stop.words = stop.list,
-#                             sparse = 0.99)
-
-# Bind Term Document Matrix results to reviews.mod
-#reviews.mod = data.frame(reviews.mod,
-#                         as.data.frame(t(data.matrix(reviews.mod.tdm))))
+# Clean-up workspace
+rm.list = "^AFINN|^count|^freq|^mean|^mft|^reviews.eda.|^sent|^words"
+rm(list = ls(pattern = paste(rm.list))); rm(rm.list)
 
 #------------------------------------------------------------------------------
 # Train-Test Split
@@ -866,20 +862,15 @@ trn.idx = createDataPartition(reviews.mod$helpful.bins,
                               p = 0.70,
                               list = F)
 
+# Validate split; target = 0.70
+length(trn.idx) / nrow(reviews.mod)
+
 # Create test index
 #   Note: This is a little tricky because row names are not consecutive, since
 #   "reviews.mod" is a subset of "reviews", "trn.idx" does not contain the row
 #   names, but the row index.
 tst.idx = as.matrix(match(as.integer(rownames(reviews.mod))[-trn.idx], 
                           rownames(reviews.mod)))
-
-# Validate indexes
-temp = rbind(reviews.mod[trn.idx, ], reviews.mod[tst.idx, ])
-temp = temp[order(as.numeric(rownames(temp))), ]
-identical(reviews.mod, temp); rm(temp)
-
-# Validate split; target = 0.70
-length(trn.idx) / nrow(reviews.mod)
 
 # Create sub-sample index (for early modeling)
 #   Note: This runs into similar issues as "tst.idx" above. The sub-sample must
@@ -892,13 +883,30 @@ trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
                                   p = 0.15,
                                   list = F)
 
+#--------------------------------------
+# Validate indexes
+#--------------------------------------
+# Train and test
+temp = rbind(reviews.mod[trn.idx, ], 
+             reviews.mod[tst.idx, ])
+anyDuplicated(temp$reviewsPK); rm(temp)
+
+# Train sub-set and test
+temp = rbind(reviews.mod[trn.idx, ][trn.idx.sub, ],
+             reviews.mod[tst.idx, ])
+anyDuplicated(temp$reviewsPK); rm(temp)
+
 #------------------------------------------------------------------------------
 # Train-Test Datasets
 #------------------------------------------------------------------------------
+# Train set
+reviews.mod.trn = reviews.mod[trn.idx, ]
 
-###############################################################################
-# TO DO
-###############################################################################
+# Train sub-set
+reviews.mod.trn.sub = reviews.mod[trn.idx, ][trn.idx.sub, ]
+
+# Test set
+reviews.mod.tst = reviews.mod[tst.idx, ]
 
 #==============================================================================
 # S09 - Model Build
