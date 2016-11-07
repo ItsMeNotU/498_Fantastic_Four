@@ -748,20 +748,91 @@ reviews.tfidf = reviews.sent
 # Isolate words in given review and count word frequency across all reviews
 tfidf = words %>% 
             group_by(reviewsPK) %>%
-            mutate(n.wordInOneReview = n()) %>% 
-            ungroup()%>%
-            group_by(reviewsPK,word) %>%
-            mutate(n.wordInOneReview = n()) %>% 
-            ungroup()%>%
-            group_by(word)%>% distinct(reviewsPK) %>% 
-            mutate(n.wordInReviews=n())  %>% ungroup()
+            mutate(word.count = n()) %>% 
+            ungroup() %>%
+            group_by(reviewsPK,
+                     word) %>%
+            mutate(word.freq.one = n()) %>% 
+            ungroup() %>%
+            group_by(word) %>% 
+            distinct(reviewsPK, 
+                     .keep_all = TRUE) %>% 
+            mutate(word.freq.all = n()) %>% 
+            ungroup()
 
-nrow(unique(reviews.eda))
+# Calculate TF, IDF, TF-IDF
+tfidf$tf = round(tfidf$word.freq.one / tfidf$word.count,
+                 digits = 4)
+tfidf$idf = round(log1p(nrow(unique(reviews.tfidf)) / tfidf$word.freq.all),
+                  digits = 4)
+tfidf$tfidf = round(tfidf$tf * tfidf$idf,
+                    digits = 4)
+
+# Group and arrange by TF-IDF score
+tfidf.relevance = tfidf %>%
+                      select(overall.num,
+                             word,
+                             tfidf) %>%
+                      distinct(word,
+                               .keep_all = TRUE) %>%
+                      arrange(desc(tfidf))
 
 #--------------------------------------
 # Plots
 #--------------------------------------
+# Top 60 TF-IDF words in reviews
+ggplot(data = head(tfidf.relevance,
+                   n = 60),
+       aes(word,
+           tfidf,
+           fill = overall.num)) +
+    coord_flip() +
+    geom_bar(stat = "identity") +
+    labs(title = "Top 60 TF-IDF Words in Reviews",
+         x = NULL,
+         y = "TF-IDF") +
+    scale_colour_brewer(palette = "Paired")
 
+# Bottom 60 TF-IDF words in reviews
+#   Plot 1
+ggplot(data = head(tfidf.relevance[tfidf.relevance$tfidf <= 3, ],
+                   n = 60),
+       aes(word,
+           tfidf,
+           fill = overall.num)) +
+    coord_flip() +
+    geom_bar(stat = "identity") +
+    labs(title = "Bottom 60 TF-IDF Words in Reviews",
+         x = NULL,
+         y = "TF-IDF") +
+    scale_colour_brewer(palette = "Paired")
+
+# Top 60 TF-IDF words in reviews
+#   Plot 2
+ggplot(data = tail(tfidf.relevance,
+                   n = 60),
+       aes(word,
+           tfidf,
+           fill = overall.num)) +
+    coord_flip() +
+    geom_bar(stat = "identity") +
+    labs(title = "Bottom 60 TF-IDF Words in Reviews",
+         x = NULL,
+         y = "TF-IDF") +
+    scale_colour_brewer(palette = "Paired")
+
+# Top TF-IDF words by overall rating
+ggplot(data = tfidf[tfidf$tfidf > 5, ],
+       aes(word,
+           tfidf)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~overall.num,
+               scales = "free") +
+    theme(axis.text.x = element_text(angle = 90,
+                                     hjust = 1)) +
+    labs(title = "Top TF-IDF Words by Overall Rating",
+         x = "Word\n(Only TF-IDF Score > 5 Shown)",
+         y = "TF-IDF")
 
 #==============================================================================
 # S08 - Model Prep
@@ -820,6 +891,14 @@ set.seed(123)
 trn.idx.sub = createDataPartition(reviews.mod$helpful.bins[trn.idx],
                                   p = 0.15,
                                   list = F)
+
+#------------------------------------------------------------------------------
+# Train-Test Datasets
+#------------------------------------------------------------------------------
+
+###############################################################################
+# TO DO
+###############################################################################
 
 #==============================================================================
 # S09 - Model Build
