@@ -238,6 +238,9 @@ reviews$time.stamp = as.Date(as.POSIXct(reviews$unixReviewTime,
 reviews$time.weekday = as.factor(weekdays(reviews$time.stamp))
 reviews$time.months = as.factor(months(reviews$time.stamp))
 reviews$time.year = as.factor(substr(reviews$time.stamp, 1, 4))
+reviews$time.min = ave(reviews$time.stamp,
+                       reviews$asin,
+                       FUN = min)
 
 # Drop helpful
 reviews = subset(reviews, select = -c(helpful))
@@ -838,9 +841,10 @@ ggplot(data = tfidf[tfidf$tfidf > 5, ],
 # TF-IDF dataset
 #------------------------------------------------------------------------------
 
-###############################################################################
-# TODO
-###############################################################################
+# Top 200 TF-IDF Words
+tfidf.relevance.top = tfidf.relevance[1:200, ]
+
+# Lorem Ipsum
 
 #==============================================================================
 # S08 - Model Prep
