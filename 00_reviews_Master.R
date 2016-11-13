@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-11-07 by MJG
+# Last Updated: 2016-11-12 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -844,7 +844,35 @@ ggplot(data = tfidf[tfidf$tfidf > 5, ],
 # Top 200 TF-IDF Words
 tfidf.relevance.top = tfidf.relevance[1:200, ]
 
-# Lorem Ipsum
+# Create temp matrix to join for words and counts
+temp = matrix(nrow = nrow(reviews.sent),
+              ncol = nrow(tfidf.relevance.top))
+
+# Rename features
+#   Note: will need to fix grammar after join is complete
+colnames(temp) = tfidf.relevance.top$word
+
+# Join
+reviews.tfidf = cbind(reviews.sent, temp)
+
+# Verify no NA values before replacing
+colSums(is.na(reviews.sent))[colSums(is.na(reviews.sent)) > 0]
+
+# Replace NA values with zero
+reviews.tfidf[is.na(reviews.tfidf)] = 0
+
+# Join counts
+for (review in reviews.tfidf$reviewsPK) {
+    idx = tfidf$reviewsPK == review
+    words = tfidf$word[idx]
+    idx.top = words %in% tfidf.relevance.top$word
+    counts = tfidf$word.freq.one[idx]
+    reviews.tfidf[which(reviews.tfidf$reviewsPK == review),
+                  words[idx.top]] = counts[idx.top]
+}
+
+# Clean-up
+rm(temp)
 
 #==============================================================================
 # S08 - Model Prep
