@@ -951,7 +951,394 @@ reviews.mod.tst = reviews.mod[tst.idx, ]
 # Random Forest
 #------------------------------------------------------------------------------
 
-# Lorem ipsum
+#--------------------------------------
+# Model 1 | train sub-sample | mtry
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (61.89% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~30 seconds
+
+# Use randomForest::tuneRF() for baseline model
+#   mtry = 28
+ptm = proc.time()
+set.seed(55555)
+rf.Tune = tuneRF(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+                 y = reviews.mod.trn.sub[, 14],
+                 ntreeTry = 150,
+                 stepFactor = 1.5,
+                 improve = 0.05,  
+                 trace = TRUE,
+                 plot = TRUE)
+proc.time() - ptm; rm(ptm)
+
+# Specify fit parameters
+parRF.m1.fc = trainControl(method = "none")
+parRF.m1.grid = data.frame(mtry = 15)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m1 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+                 y = reviews.mod.trn.sub[, 14], 
+                 method = "parRF", 
+                 trControl = parRF.m1.fc, 
+                 tuneGrid = parRF.m1.grid, 
+                 preProcess = c("nzv", "center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m1
+parRF.m1$finalModel
+varImp(parRF.m1)
+plot(varImp(parRF.m1))
+
+# In-sample
+parRF.m1.trn.pred = predict(parRF.m1,
+                            newdata = reviews.mod.trn.sub)
+parRF.m1.trn.cm = confusionMatrix(parRF.m1.trn.pred,
+                                  reviews.mod.trn.sub$helpful.bins)
+
+# Out-of-sample
+parRF.m1.tst.pred = predict(parRF.m1,
+                            newdata = reviews.mod.tst)
+parRF.m1.tst.cm = confusionMatrix(parRF.m1.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m1, file = file.path(getwd(), "parRF.m1.RData"))
+
+#--------------------------------------
+# Model 2 | train sample | mtry
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (63.73% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~3 mins
+
+# Specify fit parameters
+parRF.m2.fc = trainControl(method = "none")
+parRF.m2.grid = data.frame(mtry = 15)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m2 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
+                 y = reviews.mod.trn[, 14], 
+                 method = "parRF", 
+                 trControl = parRF.m2.fc, 
+                 tuneGrid = parRF.m2.grid, 
+                 preProcess = c("nzv", "center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m2
+parRF.m2$finalModel
+varImp(parRF.m2)
+plot(varImp(parRF.m2))
+
+# In-sample
+parRF.m2.trn.pred = predict(parRF.m2,
+                            newdata = reviews.mod.trn)
+parRF.m2.trn.cm = confusionMatrix(parRF.m2.trn.pred,
+                                  reviews.mod.trn$helpful.bins)
+
+# Out-of-sample
+parRF.m2.tst.pred = predict(parRF.m2,
+                            newdata = reviews.mod.tst)
+parRF.m2.tst.cm = confusionMatrix(parRF.m2.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m2, file = file.path(getwd(), "parRF.m2.RData"))
+
+#--------------------------------------
+# Model 3 | train sub-sample | cv
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (61.97% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~17.5 mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m3.fc = trainControl(method = "cv",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m3 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+                 y = reviews.mod.trn.sub[, 14],
+                 method = "parRF",
+                 trControl = parRF.m3.fc,
+                 preProcess = c("nzv", "center", "scale"),
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m3
+parRF.m3$finalModel
+varImp(parRF.m3)
+plot(varImp(parRF.m3))
+
+# In-sample
+parRF.m3.trn.pred = predict(parRF.m3,
+                            newdata = reviews.mod.trn.sub)
+parRF.m3.trn.cm = confusionMatrix(parRF.m3.trn.pred,
+                                  reviews.mod.trn.sub$helpful.bins)
+
+# Out-of-sample
+parRF.m3.tst.pred = predict(parRF.m3,
+                            newdata = reviews.mod.tst)
+parRF.m3.tst.cm = confusionMatrix(parRF.m3.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m3, file = file.path(getwd(), "parRF.m3.RData"))
+
+#--------------------------------------
+# Model 4 | train sample | cv
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (64.10% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~1.5 hours
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m4.fc = trainControl(method = "cv",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m4 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
+                 y = reviews.mod.trn[, 14], 
+                 method = "parRF", 
+                 trControl = parRF.m4.fc, 
+                 preProcess = c("nzv", "center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m4
+parRF.m4$finalModel
+varImp(parRF.m4)
+plot(varImp(parRF.m4))
+
+# In-sample
+parRF.m4.trn.pred = predict(parRF.m4,
+                            newdata = reviews.mod.trn)
+parRF.m4.trn.cm = confusionMatrix(parRF.m4.trn.pred,
+                                  reviews.mod.trn$helpful.bins)
+
+# Out-of-sample
+parRF.m4.tst.pred = predict(parRF.m4,
+                            newdata = reviews.mod.tst)
+parRF.m4.tst.cm = confusionMatrix(parRF.m4.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m4, file = file.path(getwd(), "parRF.m4.RData"))
+
+#--------------------------------------
+# Model 5 | train sub-sample | rcv
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (61.68% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~47 mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m5.fc = trainControl(method = "repeatedcv",
+                           repeats = 3,
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m5 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+                 y = reviews.mod.trn.sub[, 14],
+                 method = "parRF",
+                 trControl = parRF.m5.fc,
+                 preProcess = c("nzv", "center", "scale"),
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m5
+parRF.m5$finalModel
+varImp(parRF.m5)
+plot(varImp(parRF.m5))
+
+# In-sample
+parRF.m5.trn.pred = predict(parRF.m5,
+                            newdata = reviews.mod.trn.sub)
+parRF.m5.trn.cm = confusionMatrix(parRF.m5.trn.pred,
+                                  reviews.mod.trn.sub$helpful.bins)
+
+# Out-of-sample
+parRF.m5.tst.pred = predict(parRF.m5,
+                            newdata = reviews.mod.tst)
+parRF.m5.tst.cm = confusionMatrix(parRF.m5.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m5, file = file.path(getwd(), "parRF.m5.RData"))
+
+#--------------------------------------
+# Model 6 | train sample | rcv
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX.X mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m6.fc = trainControl(method = "repeatedcv",
+                           repeats = 3,
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m6 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
+                 y = reviews.mod.trn[, 14], 
+                 method = "parRF", 
+                 trControl = parRF.m6.fc, 
+                 preProcess = c("nzv", "center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m6
+parRF.m6$finalModel
+varImp(parRF.m6)
+plot(varImp(parRF.m6))
+
+# In-sample
+parRF.m6.trn.pred = predict(parRF.m6,
+                            newdata = reviews.mod.trn)
+parRF.m6.trn.cm = confusionMatrix(parRF.m6.trn.pred,
+                                  reviews.mod.trn$helpful.bins)
+
+# Out-of-sample
+parRF.m6.tst.pred = predict(parRF.m6,
+                            newdata = reviews.mod.tst)
+parRF.m6.tst.cm = confusionMatrix(parRF.m6.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m6, file = file.path(getwd(), "parRF.m6.RData"))
+
+#--------------------------------------
+# Model 7 | train sub-sample | oob
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (61.73% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~3 mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m7.fc = trainControl(method = "oob",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m7 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+                 y = reviews.mod.trn.sub[, 14],
+                 method = "parRF",
+                 trControl = parRF.m7.fc,
+                 preProcess = c("nzv", "center", "scale"),
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m7
+parRF.m7$finalModel
+varImp(parRF.m7)
+plot(varImp(parRF.m7))
+
+# In-sample
+parRF.m7.trn.pred = predict(parRF.m7,
+                            newdata = reviews.mod.trn.sub)
+parRF.m7.trn.cm = confusionMatrix(parRF.m7.trn.pred,
+                                  reviews.mod.trn.sub$helpful.bins)
+
+# Out-of-sample
+parRF.m7.tst.pred = predict(parRF.m7,
+                            newdata = reviews.mod.tst)
+parRF.m7.tst.cm = confusionMatrix(parRF.m7.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m7, file = file.path(getwd(), "parRF.m7.RData"))
+
+#--------------------------------------
+# Model 8 | train sample | oob
+#--------------------------------------
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (64.16% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~17 mins
+
+# Specify fit parameters
+set.seed(55555)
+parRF.m8.fc = trainControl(method = "oob",
+                           returnResamp = "all",
+                           verboseIter = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+parRF.m8 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
+                 y = reviews.mod.trn[, 14], 
+                 method = "parRF", 
+                 trControl = parRF.m8.fc, 
+                 preProcess = c("nzv", "center", "scale"), 
+                 verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+parRF.m8
+parRF.m8$finalModel
+varImp(parRF.m8)
+plot(varImp(parRF.m8))
+
+# In-sample
+parRF.m8.trn.pred = predict(parRF.m8,
+                            newdata = reviews.mod.trn)
+parRF.m8.trn.cm = confusionMatrix(parRF.m8.trn.pred,
+                                  reviews.mod.trn$helpful.bins)
+
+# Out-of-sample
+parRF.m8.tst.pred = predict(parRF.m8,
+                            newdata = reviews.mod.tst)
+parRF.m8.tst.cm = confusionMatrix(parRF.m8.tst.pred,
+                                  reviews.mod.tst$helpful.bins)
+
+# Save model
+save(parRF.m8, file = file.path(getwd(), "parRF.m8.RData"))
 
 #------------------------------------------------------------------------------
 # Support Vector Machine
