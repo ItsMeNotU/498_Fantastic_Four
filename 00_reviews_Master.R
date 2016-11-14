@@ -35,7 +35,8 @@ library(wordcloud)
 #   S06 - Sentiment Analysis
 #   S07 - TF-IDF
 #   S08 - Model Prep
-#   S09 - Model Build
+#   S09 - Model Build (Classification)
+#   S10 - Model Build (Regression)
 
 #==============================================================================
 # S01 | Functions
@@ -840,17 +841,11 @@ ggplot(data = tfidf[tfidf$tfidf > 5, ],
 #------------------------------------------------------------------------------
 # TF-IDF dataset
 #------------------------------------------------------------------------------
-
-# Top 200 TF-IDF Words
-tfidf.relevance.top = tfidf.relevance[1:200, ]
-
-# Create temp matrix to join for words and counts
+# Create temp matrix to later join words and counts
+#   Note: use top 200 TF-IDF words
 temp = matrix(nrow = nrow(reviews.sent),
-              ncol = nrow(tfidf.relevance.top))
-
-# Rename features
-#   Note: will need to fix grammar after join is complete
-colnames(temp) = tfidf.relevance.top$word
+              ncol = nrow(tfidf.relevance[1:200, ]))
+colnames(temp) = tfidf.relevance$word[1:200]
 
 # Join
 reviews.tfidf = cbind(reviews.sent, temp)
@@ -941,7 +936,7 @@ reviews.mod.trn.sub = reviews.mod[trn.idx, ][trn.idx.sub, ]
 reviews.mod.tst = reviews.mod[tst.idx, ]
 
 #==============================================================================
-# S09 - Model Build
+# S09 - Model Build (Classification)
 #==============================================================================
 # Note: various models built, organized by type, then model number(s)
 # Note: models below currently use sub-sample to build model, but predict
@@ -1339,6 +1334,25 @@ parRF.m8.tst.cm = confusionMatrix(parRF.m8.tst.pred,
 
 # Save model
 save(parRF.m8, file = file.path(getwd(), "parRF.m8.RData"))
+
+#------------------------------------------------------------------------------
+# Support Vector Machine
+#------------------------------------------------------------------------------
+
+# Lorem ipsum
+
+#==============================================================================
+# S10 - Model Build (Regression)
+#==============================================================================
+# Note: various models built, organized by type, then model number(s)
+# Note: models below currently use sub-sample to build model, but predict
+#   on full test set
+
+#------------------------------------------------------------------------------
+# Random Forest
+#------------------------------------------------------------------------------
+
+# Lorem ipsum
 
 #------------------------------------------------------------------------------
 # Support Vector Machine
