@@ -957,11 +957,11 @@ reviews.mod.tst = reviews.mod[tst.idx, ]
 #   mtry = 15
 ptm = proc.time()
 set.seed(55555)
-rf.Tune = tuneRF(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+rf.Tune = tuneRF(x = reviews.mod.trn.sub[, -c(1:14, 18)],
                  y = reviews.mod.trn.sub[, 14],
                  ntreeTry = 150,
                  stepFactor = 1.5,
-                 improve = 0.05,  
+                 improve = 0.05,
                  trace = TRUE,
                  plot = TRUE)
 proc.time() - ptm; rm(ptm)
@@ -974,12 +974,12 @@ parRF.m1.grid = data.frame(mtry = 15)
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m1 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
-                 y = reviews.mod.trn.sub[, 14], 
-                 method = "parRF", 
-                 trControl = parRF.m1.fc, 
-                 tuneGrid = parRF.m1.grid, 
-                 preProcess = c("nzv", "center", "scale"), 
+parRF.m1 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)],
+                 y = reviews.mod.trn.sub[, 14],
+                 method = "parRF",
+                 trControl = parRF.m1.fc,
+                 tuneGrid = parRF.m1.grid,
+                 preProcess = c("nzv", "center", "scale"),
                  verbose = TRUE)
 proc.time() - ptm; rm(ptm)
 closeAllConnections()
@@ -1020,12 +1020,12 @@ parRF.m2.grid = data.frame(mtry = 15)
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m2 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
-                 y = reviews.mod.trn[, 14], 
-                 method = "parRF", 
-                 trControl = parRF.m2.fc, 
-                 tuneGrid = parRF.m2.grid, 
-                 preProcess = c("nzv", "center", "scale"), 
+parRF.m2 = train(x = reviews.mod.trn[, -c(1:14, 18)],
+                 y = reviews.mod.trn[, 14],
+                 method = "parRF",
+                 trControl = parRF.m2.fc,
+                 tuneGrid = parRF.m2.grid,
+                 preProcess = c("nzv", "center", "scale"),
                  verbose = TRUE)
 proc.time() - ptm; rm(ptm)
 closeAllConnections()
@@ -1068,7 +1068,7 @@ parRF.m3.fc = trainControl(method = "cv",
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m3 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+parRF.m3 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)],
                  y = reviews.mod.trn.sub[, 14],
                  method = "parRF",
                  trControl = parRF.m3.fc,
@@ -1115,11 +1115,11 @@ parRF.m4.fc = trainControl(method = "cv",
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m4 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
-                 y = reviews.mod.trn[, 14], 
-                 method = "parRF", 
-                 trControl = parRF.m4.fc, 
-                 preProcess = c("nzv", "center", "scale"), 
+parRF.m4 = train(x = reviews.mod.trn[, -c(1:14, 18)],
+                 y = reviews.mod.trn[, 14],
+                 method = "parRF",
+                 trControl = parRF.m4.fc,
+                 preProcess = c("nzv", "center", "scale"),
                  verbose = TRUE)
 proc.time() - ptm; rm(ptm)
 closeAllConnections()
@@ -1163,7 +1163,7 @@ parRF.m5.fc = trainControl(method = "repeatedcv",
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m5 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+parRF.m5 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)],
                  y = reviews.mod.trn.sub[, 14],
                  method = "parRF",
                  trControl = parRF.m5.fc,
@@ -1211,11 +1211,11 @@ parRF.m6.fc = trainControl(method = "repeatedcv",
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m6 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
-                 y = reviews.mod.trn[, 14], 
-                 method = "parRF", 
-                 trControl = parRF.m6.fc, 
-                 preProcess = c("nzv", "center", "scale"), 
+parRF.m6 = train(x = reviews.mod.trn[, -c(1:14, 18)],
+                 y = reviews.mod.trn[, 14],
+                 method = "parRF",
+                 trControl = parRF.m6.fc,
+                 preProcess = c("nzv", "center", "scale"),
                  verbose = TRUE)
 proc.time() - ptm; rm(ptm)
 closeAllConnections()
@@ -1258,7 +1258,7 @@ parRF.m7.fc = trainControl(method = "oob",
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m7 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
+parRF.m7 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)],
                  y = reviews.mod.trn.sub[, 14],
                  method = "parRF",
                  trControl = parRF.m7.fc,
@@ -1305,11 +1305,11 @@ parRF.m8.fc = trainControl(method = "oob",
 registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-parRF.m8 = train(x = reviews.mod.trn[, -c(1:14, 18)], 
-                 y = reviews.mod.trn[, 14], 
-                 method = "parRF", 
-                 trControl = parRF.m8.fc, 
-                 preProcess = c("nzv", "center", "scale"), 
+parRF.m8 = train(x = reviews.mod.trn[, -c(1:14, 18)],
+                 y = reviews.mod.trn[, 14],
+                 method = "parRF",
+                 trControl = parRF.m8.fc,
+                 preProcess = c("nzv", "center", "scale"),
                  verbose = TRUE)
 proc.time() - ptm; rm(ptm)
 closeAllConnections()
@@ -1339,7 +1339,56 @@ save(parRF.m8, file = file.path(getwd(), "parRF.m8.RData"))
 # Support Vector Machine
 #------------------------------------------------------------------------------
 
-# Lorem ipsum
+#--------------------------------------
+# Model 1 | train sub-sample | cv
+#--------------------------------------
+# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
+#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~XXX seconds
+
+# Specify fit parameters
+svm.m1.fc = trainControl(method = "cv",
+                         returnResamp = "all",
+                         verboseIter = TRUE,
+                         classProbs = TRUE)
+
+# Run model
+registerDoParallel(2)
+ptm = proc.time()
+set.seed(55555)
+svm.m1 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)],
+               y = reviews.mod.trn.sub[, 14],
+               method = "svmRadialSigma",
+               trControl = svm.m1.fc,
+               preProcess = c("nzv", "center", "scale"),
+               verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+closeAllConnections()
+
+# Summary information
+svm.m1
+svm.m1$finalModel
+varImp(svm.m1)
+plot(varImp(svm.m1))
+
+# In-sample
+svm.m1.trn.pred = predict(svm.m1,
+                          newdata = reviews.mod.trn.sub)
+svm.m1.trn.cm = confusionMatrix(svm.m1.trn.pred,
+                                reviews.mod.trn.sub$helpful.bins)
+svm.m1.trn.cm$table
+svm.m1.trn.cm$overall[1:2]
+
+# Out-of-sample
+svm.m1.tst.pred = predict(svm.m1,
+                          newdata = reviews.mod.tst)
+svm.m1.tst.cm = confusionMatrix(svm.m1.tst.pred,
+                                reviews.mod.tst$helpful.bins)
+svm.m1.tst.cm$table
+svm.m1.tst.cm$overall[1:2]
+
+# Save model
+save(svm.m1, file = file.path(getwd(), "svm.m1.RData"))
 
 #==============================================================================
 # S10 - Model Build (Regression)
