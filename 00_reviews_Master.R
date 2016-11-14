@@ -943,7 +943,7 @@ reviews.mod.tst = reviews.mod[tst.idx, ]
 #   on full test set
 
 #------------------------------------------------------------------------------
-# Random Forest
+# Random Forest (Parallel)
 #------------------------------------------------------------------------------
 
 #--------------------------------------
@@ -954,7 +954,7 @@ reviews.mod.tst = reviews.mod[tst.idx, ]
 # Note: model run time ~30 seconds
 
 # Use randomForest::tuneRF() for baseline model
-#   mtry = 28
+#   mtry = 15
 ptm = proc.time()
 set.seed(55555)
 rf.Tune = tuneRF(x = reviews.mod.trn.sub[, -c(1:14, 18)], 
