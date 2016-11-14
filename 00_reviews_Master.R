@@ -1201,9 +1201,9 @@ save(parRF.m5, file = file.path(getwd(), "parRF.m5.RData"))
 #--------------------------------------
 # Model 6 | train sample | rcv
 #--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX.X mins
+# Note: model fits well in-sample (100% accuracy), but not out-of-sample
+#   (64.16% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~4 hours, 45 mins
 
 # Specify fit parameters
 set.seed(55555)
