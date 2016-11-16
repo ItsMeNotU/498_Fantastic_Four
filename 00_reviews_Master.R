@@ -12,6 +12,7 @@ rm(list=ls())
 library(caret)
 library(doParallel)
 library(dplyr)
+library(gbm)
 library(ggplot2)
 library(httr)
 library(jsonlite)
@@ -242,6 +243,16 @@ reviews$time.year = as.factor(substr(reviews$time.stamp, 1, 4))
 reviews$time.min = ave(reviews$time.stamp,
                        reviews$asin,
                        FUN = min)
+
+## TO-DO
+# Time Delay
+#reviews.tfidf$date.diff = reviews.tfidf$time.stamp - reviews.tfidf$time.min
+
+# Deviation from the mean score (signed deviation from the average rating)
+#reviews.tfidf$avg.asin.rating = ave(reviews.tfidf$overall.num, 
+#                                    reviews.tfidf$asin, FUN = mean)
+
+#reviews.tfidf$dev.mean = reviews.tfidf$avg.asin.rating - reviews.tfidf$overall.num
 
 # Drop helpful
 reviews = subset(reviews, select = -c(helpful))
@@ -860,7 +871,7 @@ reviews.tfidf[is.na(reviews.tfidf)] = 0
 for (review in reviews.tfidf$reviewsPK) {
     idx = tfidf$reviewsPK == review
     words = tfidf$word[idx]
-    idx.top = words %in% tfidf.relevance.top$word
+    idx.top = words %in% tfidf.relevance$word[1:200]
     counts = tfidf$word.freq.one[idx]
     reviews.tfidf[which(reviews.tfidf$reviewsPK == review),
                   words[idx.top]] = counts[idx.top]
@@ -868,6 +879,9 @@ for (review in reviews.tfidf$reviewsPK) {
 
 # Clean-up
 rm(temp)
+
+
+test = tfidf.relevance
 
 #==============================================================================
 # S08 - Model Prep
@@ -1389,6 +1403,84 @@ svm.m1.tst.cm$overall[1:2]
 
 # Save model
 save(svm.m1, file = file.path(getwd(), "svm.m1.RData"))
+
+#------------------------------------------------------------------------------
+# GBM
+#------------------------------------------------------------------------------
+
+# Pre-processing for GBM; time-min & date diff to numeric
+# train-subset
+reviews.mod.trn.sub$time.stamp = as.numeric(as.POSIXct(reviews.mod.trn.sub$time.stamp))
+reviews.mod.trn.sub$time.min = as.numeric(as.POSIXct(reviews.mod.trn.sub$time.min))
+reviews.mod.trn.sub$time.min = log(reviews.mod.trn.sub$time.min)
+reviews.mod.trn.sub$date.diff = log(as.numeric(reviews.mod.trn.sub$date.diff))
+#train
+reviews.mod.trn$time.stamp = as.numeric(as.POSIXct(reviews.mod.trn$time.stamp))
+reviews.mod.trn$time.min = as.numeric(as.POSIXct(reviews.mod.trn$time.min))
+reviews.mod.trn$time.min = log(reviews.mod.trn$time.min)
+reviews.mod.trn$date.diff = log(as.numeric(reviews.mod.trn$date.diff))
+#test
+reviews.mod.tst$time.stamp = as.numeric(as.POSIXct(reviews.mod.tst$time.stamp))
+reviews.mod.tst$time.min = as.numeric(as.POSIXct(reviews.mod.tst$time.min))
+reviews.mod.tst$time.min = log(reviews.mod.tst$time.min)
+reviews.mod.tst$date.diff = log(as.numeric(reviews.mod.tst$date.diff))
+
+ptm = proc.time()
+gbmModel.1 = gbm(reviews.mod.trn.sub$helpful.bins~.,
+                 distribution = "multinomial",
+                 data = reviews.mod.trn.sub[, -c(1:14, 18)],
+                 n.trees = 2000,
+                 shrinkage = .01,
+                 n.minobsinnode = 20)
+proc.time() - ptm; rm(ptm)
+
+# Out-of-sample
+gbm.m1.tst.pred = predict(gbmModel.1,
+                          newdata = reviews.mod.tst,
+                          n.trees = 2000,
+                          type = "response")
+
+class(gbm.m1.tst.pred)
+
+gbm.m1.tst.pred <- apply(gbm.m1.tst.pred, 1, which.max)
+
+gbm.m1.tst.pred = gsub(3, gbm.m1.tst.pred, replacement = "Upper")
+gbm.m1.tst.pred = gsub(2, gbm.m1.tst.pred, replacement = "Middle")
+gbm.m1.tst.pred = gsub(1, gbm.m1.tst.pred, replacement = "Lower")
+
+gbm.m1.tst.tst.cm = confusionMatrix(gbm.m1.tst.pred,
+                                    reviews.mod.tst$helpful.bins)
+
+gbm.m1.tst.tst.cm
+
+#GBM with cross validation
+
+gbmWithCrossValidation = gbm(formula = reviews.mod.trn$helpful.bins~.,
+                             distribution = "multinomial",
+                             data = reviews.mod.trn[, -c(1:14, 18)],
+                             n.trees = 2000,
+                             shrinkage = .1,
+                             n.minobsinnode = 200, 
+                             cv.folds = 5,
+                             n.cores = 2)
+
+bestTreeForPrediction = gbm.perf(gbmWithCrossValidation)
+
+gbm.m2.test.pred = predict(object = gbmWithCrossValidation,
+                           newdata = reviews.mod.tst,
+                           n.trees = bestTreeForPrediction,
+                           type = "response")
+
+p.predBST <- apply(gbm.m2.test.pred, 1, which.max)
+
+gbm.m2.test.pred[1:6,,]
+
+p.predBST = gsub(3, p.predBST, replacement = "Upper")
+p.predBST = gsub(2, p.predBST, replacement = "Middle")
+p.predBST = gsub(1, p.predBST, replacement = "Lower")
+
+gbm.m1.tst.tst.cm = confusionMatrix(p.predBST,
+                                    reviews.mod.tst$helpful.bins)
 
 #==============================================================================
 # S10 - Model Build (Regression)
