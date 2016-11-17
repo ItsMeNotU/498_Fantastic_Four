@@ -19,63 +19,63 @@ library(jsonlite)
 # Import
 #------------------------------------------------------------------------------
 # Load data
-recs = stream_in(file("reviews_Grocery_and_Gourmet_Food_5.json.gz"))
+recs.in = stream_in(file("reviews_Grocery_and_Gourmet_Food_5.json.gz"))
 
 #------------------------------------------------------------------------------
 # Quality Check
 #------------------------------------------------------------------------------
 # Check for duplicated rows
-anyDuplicated(recs,
+anyDuplicated(recs.in,
               fromLast = TRUE)
-anyDuplicated(recs[c("reviewerID", "asin")],
+anyDuplicated(recs.in[c("reviewerID", "asin")],
               fromLast = TRUE)
 
 # Add a primary key to use for convenience
-recs$recsPK = seq.int(nrow(recs))
+recs.in$recsPK = seq.int(nrow(recs.in))
 
 # Reorder to put recsPK first
-recs = recs[c(10, 1:9)]
+recs.in = recs.in[c(10, 1:9)]
 
 #------------------------------------------------------------------------------
 # Prep
 #------------------------------------------------------------------------------
 # Rename existing variables
-names(recs)[names(recs)=="overall"] = "overall.num"
+names(recs.in)[names(recs.in)=="overall"] = "overall.num"
 
 # Convert character features to factors
-recs$reviewerID = as.factor(recs$reviewerID)
-recs$asin = as.factor(recs$asin)
+recs.in$reviewerID = as.factor(recs.in$reviewerID)
+recs.in$asin = as.factor(recs.in$asin)
 
 # Create numeric versions of factors
-recs$reviewerID.num = recs$reviewerID
-recs$asin.num = recs$asin
+recs.in$reviewerID.num = recs.in$reviewerID
+recs.in$asin.num = recs.in$asin
 
 # Convert factor levels to numeric values
-levels(recs$reviewerID.num) = seq(from  = 1,
-                                  to = nlevels(recs$reviewerID.num),
-                                  by = 1)
-levels(recs$asin.num) = seq(from = 1,
-                            to = nlevels(recs$asin.num),
-                            by = 1)
+levels(recs.in$reviewerID.num) = seq(from  = 1,
+                                     to = nlevels(recs.in$reviewerID.num),
+                                     by = 1)
+levels(recs.in$asin.num) = seq(from = 1,
+                               to = nlevels(recs.in$asin.num),
+                               by = 1)
 
 # Convert factor features to numeric
-recs$reviewerID.num = as.numeric(as.character(recs$reviewerID.num))
-recs$asin.num = as.numeric(as.character(recs$asin.num))
+recs.in$reviewerID.num = as.numeric(as.character(recs.in$reviewerID.num))
+recs.in$asin.num = as.numeric(as.character(recs.in$asin.num))
 
-# Create flag for subset of recs
-recs$helpful.nan = sapply(recs$helpful,
-                          function(x) ifelse(x[2] == 0, 1, 
-                                             ifelse(x[1]>x[2], 1, 0)))
+# Create flag for subset of recs.in
+recs.in$helpful.nan = sapply(recs.in$helpful,
+                             function(x) ifelse(x[2] == 0, 1, 
+                                                ifelse(x[1]>x[2], 1, 0)))
 
 #------------------------------------------------------------------------------
 # Export
 #------------------------------------------------------------------------------
 # Subset recs for export
-recs = recs[recs$helpful.nan == 0, ]
+recs.in = recs.in[recs.in$helpful.nan == 0, ]
 
 # Export for use in Mahout
-write.table(x = recs[, c(11, 12, 7)],
-            file = "recs.txt",
+write.table(x = recs.in[, c(11, 12, 7)],
+            file = "recs_input.txt",
             quote = FALSE,
             sep = ",",
             col.names = FALSE,
@@ -130,23 +130,23 @@ rm(temp); rm(row); rm(V1); rm(V2)
 #==============================================================================
 
 # Replace numeric values with original values
-recs.out$reviewerID = recs$reviewerID[match(recs.out$reviewerID.num,
-                                            recs$reviewerID.num)]
-recs.out$asin = recs$asin[match(recs.out$asin.num,
-                                recs$asin.num)]
+recs.out$reviewerID = recs.in$reviewerID[match(recs.out$reviewerID.num,
+                                               recs.in$reviewerID.num)]
+recs.out$asin = recs.in$asin[match(recs.out$asin.num,
+                                   recs.in$asin.num)]
 
 # Drop numeric versions
 recs.out = recs.out[, 3:4]
 
 # Export
 write.table(x = recs.out,
-            file = "recs_out.csv",
+            file = "recs_output.csv",
             quote = FALSE,
             sep = ",",
             row.names = FALSE)
 
 # Clean up
-rm(list = ls(pattern = "recs"))
+rm(list = ls(pattern = "recs."))
 
 #==============================================================================
 # FIN
