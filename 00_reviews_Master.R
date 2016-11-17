@@ -1353,12 +1353,20 @@ save(parRF.m8, file = file.path(getwd(), "parRF.m8.RData"))
 # Support Vector Machine
 #------------------------------------------------------------------------------
 
+# Note: SVM appears to convert the following variables and create NAs:
+#   $time.weekday
+#   $time.months
+#   $time.min
+# These variables must be excluded during the modeling step, else an error is
+#   thrown. Similarly, factor variables need to either be excluded, or broken
+#   down into flag variables by level.
+
 #--------------------------------------
 # Model 1 | train sub-sample | cv
 #--------------------------------------
-# Note: model fits well in-sample (XXX% accuracy), but not out-of-sample
-#   (XXX% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
-# Note: model run time ~XXX seconds
+# Note: model fits well in-sample (64.79% accuracy), but not out-of-sample
+#   (61.90% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~13.5 mins
 
 # Specify fit parameters
 svm.m1.fc = trainControl(method = "cv",
@@ -1367,17 +1375,15 @@ svm.m1.fc = trainControl(method = "cv",
                          classProbs = TRUE)
 
 # Run model
-registerDoParallel(2)
 ptm = proc.time()
 set.seed(55555)
-svm.m1 = train(x = reviews.mod.trn.sub[, -c(1:14, 18)],
+svm.m1 = train(x = reviews.mod.trn.sub[, -c(1:5, 7:15, 18:22)],
                y = reviews.mod.trn.sub[, 14],
                method = "svmRadialSigma",
                trControl = svm.m1.fc,
                preProcess = c("nzv", "center", "scale"),
                verbose = TRUE)
 proc.time() - ptm; rm(ptm)
-closeAllConnections()
 
 # Summary information
 svm.m1
@@ -1387,7 +1393,7 @@ plot(varImp(svm.m1))
 
 # In-sample
 svm.m1.trn.pred = predict(svm.m1,
-                          newdata = reviews.mod.trn.sub)
+                          newdata = reviews.mod.trn.sub[, -c(1:5, 7:15, 18:22)])
 svm.m1.trn.cm = confusionMatrix(svm.m1.trn.pred,
                                 reviews.mod.trn.sub$helpful.bins)
 svm.m1.trn.cm$table
@@ -1395,7 +1401,7 @@ svm.m1.trn.cm$overall[1:2]
 
 # Out-of-sample
 svm.m1.tst.pred = predict(svm.m1,
-                          newdata = reviews.mod.tst)
+                          newdata = reviews.mod.tst[, -c(1:5, 7:15, 18:22)])
 svm.m1.tst.cm = confusionMatrix(svm.m1.tst.pred,
                                 reviews.mod.tst$helpful.bins)
 svm.m1.tst.cm$table
@@ -1403,6 +1409,55 @@ svm.m1.tst.cm$overall[1:2]
 
 # Save model
 save(svm.m1, file = file.path(getwd(), "svm.m1.RData"))
+
+#--------------------------------------
+# Model 2 | train sample | cv
+#--------------------------------------
+# Note: model fits well in-sample (64.00% accuracy), but not out-of-sample
+#   (62.08% accuracy, marginally above out-of-sample prevelance rate of 61.66%)
+# Note: model run time ~24 hours, 15 mins
+
+# Specify fit parameters
+svm.m2.fc = trainControl(method = "cv",
+                         returnResamp = "all",
+                         verboseIter = TRUE,
+                         classProbs = TRUE)
+
+# Run model
+ptm = proc.time()
+set.seed(55555)
+svm.m2 = train(x = reviews.mod.trn[, -c(1:5, 7:15, 18:22)],
+               y = reviews.mod.trn[, 14],
+               method = "svmRadialSigma",
+               trControl = svm.m2.fc,
+               preProcess = c("nzv", "center", "scale"),
+               verbose = TRUE)
+proc.time() - ptm; rm(ptm)
+
+# Summary information
+svm.m2
+svm.m2$finalModel
+varImp(svm.m2)
+plot(varImp(svm.m2))
+
+# In-sample
+svm.m2.trn.pred = predict(svm.m2,
+                          newdata = reviews.mod.trn[, -c(1:5, 7:15, 18:22)])
+svm.m2.trn.cm = confusionMatrix(svm.m2.trn.pred,
+                                reviews.mod.trn$helpful.bins)
+svm.m2.trn.cm$table
+svm.m2.trn.cm$overall[1:2]
+
+# Out-of-sample
+svm.m2.tst.pred = predict(svm.m2,
+                          newdata = reviews.mod.tst[, -c(1:5, 7:15, 18:22)])
+svm.m2.tst.cm = confusionMatrix(svm.m2.tst.pred,
+                                reviews.mod.tst$helpful.bins)
+svm.m2.tst.cm$table
+svm.m2.tst.cm$overall[1:2]
+
+# Save model
+save(svm.m2, file = file.path(getwd(), "svm.m2.RData"))
 
 #------------------------------------------------------------------------------
 # GBM
