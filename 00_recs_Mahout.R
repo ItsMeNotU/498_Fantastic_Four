@@ -27,8 +27,7 @@ recs.in = stream_in(file("reviews_Grocery_and_Gourmet_Food_5.json.gz"))
 # Check for duplicated rows
 anyDuplicated(recs.in,
               fromLast = TRUE)
-anyDuplicated(recs.in[c("reviewerID",
-                        "asin")],
+anyDuplicated(recs.in[c("reviewerID", "asin")],
               fromLast = TRUE)
 
 # Add a primary key to use for convenience

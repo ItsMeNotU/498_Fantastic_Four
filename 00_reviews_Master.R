@@ -1,12 +1,12 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-11-12 by MJG
+# Last Updated: 2016-11-18 by MJG
 #==============================================================================
 #==============================================================================
 
 # Clear workspace
-rm(list=ls())
+rm(list = ls())
 
 # Load libraries
 library(caret)
@@ -63,62 +63,6 @@ source.GitHub = function(url){
 url = "http://bit.ly/1T6LhBJ"
 source.GitHub(url); rm(url)
 
-#------------------------------------------------------------------------------
-# Text Cleaning
-#------------------------------------------------------------------------------
-text.clean = function(df, stop.words, sparse, freq = FALSE){
-    require(tm)
-    # Set valid range for sparse and check
-    if (!missing(sparse)){
-        val.range = round(seq(from = 0.01, to = 0.99, by = 0.01), digits = 2)
-        sparse = round(sparse, digits = 2)
-        if (!sparse %in% val.range){
-            stop("The value of sparse must be between 0.01 and 0.99.")
-        }
-    }
-    # Check for sparse value and freq = TRUE
-    if (!missing(sparse) && freq){
-        warning("Frequency argument ignored when sparse value given.")
-    }
-    # Create corpus
-    if (!freq){
-        temp = Corpus(VectorSource(df))
-    }
-    if (freq){
-        temp = Corpus(VectorSource(paste(df, collapse = " ")))
-    }
-    # Basic cleaning functions
-    temp = tm_map(temp, content_transformer(tolower))
-    temp = tm_map(temp, removeNumbers)
-    temp = tm_map(temp, removePunctuation)
-    temp = tm_map(temp, stripWhitespace)
-      # Check for additional stop words
-      if (!missing(stop.words)){
-          temp = tm_map(temp, removeWords, c(stopwords("english"), stop.words))
-      } else {
-          temp = tm_map(temp, removeWords, stopwords("english"))
-      }
-    temp = tm_map(temp, stemDocument)
-    # Check for sparse argument
-    if (!missing(sparse)){
-        tdm = TermDocumentMatrix(temp)
-        tdm = removeSparseTerms(tdm, sparse = sparse)
-        return(tdm)
-    }
-    # Check for frequency argument
-    if (missing(sparse)){
-        if (!freq){
-            return(temp)
-        }
-        if (freq){
-            dtm = as.matrix(DocumentTermMatrix(temp))
-            freq = colSums(dtm)
-            freq = sort(freq, decreasing = TRUE)
-            head(freq, n = 100)
-        }
-    }
-}
-
 #==============================================================================
 # S02 - API Call
 #==============================================================================
@@ -128,7 +72,8 @@ url = "http://search-predict-498-etrnmkcw2ss5k2tne664bemmjq.us-west-2.es.amazona
 path = "reviews/_search?q=coffee"
 
 # Get raw result
-raw.result = GET(url = url, path = path)
+raw.result = GET(url = url,
+                 path = path)
 
 # Convert raw result content to character string
 raw.content = rawToChar(raw.result$content)
@@ -201,13 +146,13 @@ reviews %>%
 reviews$reviewerName[is.na(reviews$reviewerName)] = ""
 
 # Tidy workspace
-rm(list=ls(pattern = "^miss"))
+rm(list = ls(pattern = "^miss"))
 
 #------------------------------------------------------------------------------
 # Prep
 #------------------------------------------------------------------------------
 # Rename existing variables
-names(reviews)[names(reviews)=="overall"] = "overall.num"
+names(reviews)[names(reviews) == "overall"] = "overall.num"
 
 # Create flags, percentage score, and bins for reviews$helpful
 reviews$helpful.up = sapply(reviews$helpful, function(x) x[1])
@@ -239,7 +184,9 @@ reviews$time.stamp = as.Date(as.POSIXct(reviews$unixReviewTime,
                                         origin="1970-01-01"))
 reviews$time.weekday = as.factor(weekdays(reviews$time.stamp))
 reviews$time.months = as.factor(months(reviews$time.stamp))
-reviews$time.year = as.factor(substr(reviews$time.stamp, 1, 4))
+reviews$time.year = as.factor(substr(x = reviews$time.stamp,
+                                     start = 1,
+                                     stop = 4))
 reviews$time.min = ave(reviews$time.stamp,
                        reviews$asin,
                        FUN = min)
@@ -316,7 +263,7 @@ summary(reviews.eda$overall.num)
 # Mean of overall.num by asin
 mean.overall.asin = reviews.eda %>%
                         group_by(asin) %>%
-                        summarise(average = mean(overall.num))
+                        summarize(average = mean(overall.num))
 
 # Store top and bottom values of mean overall.num by asin
 #    Could be used later for polarity analysis
@@ -501,20 +448,20 @@ mft.up = text.clean(reviews.eda$reviewText
 # Word Clouds
 #------------------------------------------------------------------------------
 # Overall
-wordcloud(names(mft),
-          mft)
+wordcloud(words = names(mft),
+          freq = mft)
 
 # Lower helpful bin
-wordcloud(names(mft.lo),
-          mft.lo)
+wordcloud(words = names(mft.lo),
+          freq = mft.lo)
 
 # Middle helpful bin
-wordcloud(names(mft.md),
-          mft.md)
+wordcloud(words = names(mft.md),
+          freq = mft.md)
 
 # Upper helpful bin
-wordcloud(names(mft.up),
-          mft.up)
+wordcloud(words = names(mft.up),
+          freq = mft.up)
 
 #------------------------------------------------------------------------------
 # Stop Words
@@ -776,11 +723,11 @@ tfidf = words %>%
             ungroup()
 
 # Calculate TF, IDF, TF-IDF
-tfidf$tf = round(tfidf$word.freq.one / tfidf$word.count,
+tfidf$tf = round(x = tfidf$word.freq.one / tfidf$word.count,
                  digits = 4)
-tfidf$idf = round(log1p(nrow(unique(reviews.tfidf)) / tfidf$word.freq.all),
+tfidf$idf = round(x = log1p(nrow(unique(reviews.tfidf)) / tfidf$word.freq.all),
                   digits = 4)
-tfidf$tfidf = round(tfidf$tf * tfidf$idf,
+tfidf$tfidf = round(x = tfidf$tf * tfidf$idf,
                     digits = 4)
 
 # Group and arrange by TF-IDF score
@@ -859,7 +806,8 @@ temp = matrix(nrow = nrow(reviews.sent),
 colnames(temp) = tfidf.relevance$word[1:200]
 
 # Join
-reviews.tfidf = cbind(reviews.sent, temp)
+reviews.tfidf = cbind(reviews.sent,
+                      temp)
 
 # Verify no NA values before replacing
 colSums(is.na(reviews.sent))[colSums(is.na(reviews.sent)) > 0]
@@ -868,7 +816,7 @@ colSums(is.na(reviews.sent))[colSums(is.na(reviews.sent)) > 0]
 reviews.tfidf[is.na(reviews.tfidf)] = 0
 
 # Join counts
-for (review in reviews.tfidf$reviewsPK) {
+for (review in reviews.tfidf$reviewsPK){
     idx = tfidf$reviewsPK == review
     words = tfidf$word[idx]
     idx.top = words %in% tfidf.relevance$word[1:200]
@@ -879,9 +827,6 @@ for (review in reviews.tfidf$reviewsPK) {
 
 # Clean-up
 rm(temp)
-
-
-test = tfidf.relevance
 
 #==============================================================================
 # S08 - Model Prep
