@@ -1,12 +1,12 @@
 #==============================================================================
 #==============================================================================
-# 00_recs_Master
-# Last Updated: 2016-11-17 by MJG
+# 00_recs_Mahout
+# Last Updated: 2016-11-18 by MJG
 #==============================================================================
 #==============================================================================
 
 # Clear workspace
-rm(list=ls())
+rm(list = ls())
 
 # Load libraries
 library(jsonlite)
@@ -27,7 +27,8 @@ recs.in = stream_in(file("reviews_Grocery_and_Gourmet_Food_5.json.gz"))
 # Check for duplicated rows
 anyDuplicated(recs.in,
               fromLast = TRUE)
-anyDuplicated(recs.in[c("reviewerID", "asin")],
+anyDuplicated(recs.in[c("reviewerID",
+                        "asin")],
               fromLast = TRUE)
 
 # Add a primary key to use for convenience
@@ -40,7 +41,7 @@ recs.in = recs.in[c(10, 1:9)]
 # Prep
 #------------------------------------------------------------------------------
 # Rename existing variables
-names(recs.in)[names(recs.in)=="overall"] = "overall.num"
+names(recs.in)[names(recs.in) == "overall"] = "overall.num"
 
 # Convert character features to factors
 recs.in$reviewerID = as.factor(recs.in$reviewerID)
@@ -67,14 +68,18 @@ recs.in$helpful.nan = sapply(recs.in$helpful,
                              function(x) ifelse(x[2] == 0, 1, 
                                                 ifelse(x[1]>x[2], 1, 0)))
 
-#------------------------------------------------------------------------------
-# Export
-#------------------------------------------------------------------------------
 # Subset recs for export
 recs.in = recs.in[recs.in$helpful.nan == 0, ]
 
+# Drop unecessary features
+recs.in = recs.in[c(1:3, 7, 11:13)]
+
+#------------------------------------------------------------------------------
+# Export
+#------------------------------------------------------------------------------
 # Export for use in Mahout
-write.table(x = recs.in[, c(11, 12, 7)],
+#   Note: order matters, must follow form of [userID], [productID], [rating]
+write.table(x = recs.in[, c(5, 6, 4)],
             file = "recs_input.txt",
             quote = FALSE,
             sep = ",",
@@ -110,13 +115,13 @@ for (row in 1:nrow(temp)){
 }
 
 # Only keep asin value (not score)
-recs.out$V2 = gsub(pattern = "^(.*?):.*",
+recs.out$V2 = gsub(pattern = "\\:.*",
                    replacement = "\\1",
                    x = recs.out$V2)
 
 # Change columns back to numeric for join
 recs.out$V1 = as.numeric(as.character(recs.out$V1))
-recs.out$V2 = as.numeric(as.character(recs.out$V2))
+recs.out$V2 = as.numeric(recs.out$V2)
 
 # Rename columns
 colnames(recs.out) = c("reviewerID.num",
@@ -135,11 +140,8 @@ recs.out$reviewerID = recs.in$reviewerID[match(recs.out$reviewerID.num,
 recs.out$asin = recs.in$asin[match(recs.out$asin.num,
                                    recs.in$asin.num)]
 
-# Drop numeric versions
-recs.out = recs.out[, 3:4]
-
 # Export
-write.table(x = recs.out,
+write.table(x = recs.out[, 3:4],
             file = "recs_output.csv",
             quote = FALSE,
             sep = ",",
