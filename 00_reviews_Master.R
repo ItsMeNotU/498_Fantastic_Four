@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-11-18 by MJG
+# Last Updated: 2016-11-19 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -62,6 +62,36 @@ source.GitHub = function(url){
 # Assign URL and source functions
 url = "http://bit.ly/1T6LhBJ"
 source.GitHub(url); rm(url)
+
+#------------------------------------------------------------------------------
+# Average word length
+#------------------------------------------------------------------------------
+word_len_mean = function(x){
+    x = c(unlist(strsplit(x = x,
+                          split = " ")))
+    len = nchar(x)
+    mean(len[!len %in% c(0)])
+}
+
+#------------------------------------------------------------------------------
+# Factors to flag variables (for SVM)
+#------------------------------------------------------------------------------
+fac.level = function(df, list){
+    if (!missing(list)){
+        cols = list
+    } else {
+        cols = colnames(df[, sapply(df, is.factor)])
+    }
+    for (i in cols){
+        for (level in unique(df[, i])){
+            df[paste(i, level, sep = "_")] = 
+                as.integer(ifelse(test = df[, i] == level,
+                                  yes = 1,
+                                  no = -1))
+        }
+    }
+    return(df)
+}
 
 #==============================================================================
 # S02 - API Call
@@ -154,59 +184,134 @@ rm(list = ls(pattern = "^miss"))
 # Rename existing variables
 names(reviews)[names(reviews) == "overall"] = "overall.num"
 
+#--------------------------------------
 # Create flags, percentage score, and bins for reviews$helpful
+#--------------------------------------
 reviews$helpful.up = sapply(reviews$helpful, function(x) x[1])
+
 reviews$helpful.total = sapply(reviews$helpful, function(x) x[2])
+
 reviews$helpful.nan = sapply(reviews$helpful,
-                             function(x) ifelse(x[2] == 0, 1, 
-                                             ifelse(x[1]>x[2], 1, 0)))
+                             function(x) ifelse(test = x[2] == 0,
+                                                yes = 1,
+                                                no = ifelse(test = x[1]>x[2],
+                                                            yes = 1,
+                                                            no = 0)))
+
 reviews$helpful.perc = sapply(reviews$helpful,
-                              function(x) ifelse(x[2] == 0, NA, 
-                                              ifelse(x[1]>x[2], NA, x[1]/x[2])))
+                              function(x) ifelse(test = x[2] == 0,
+                                                 yes = NA,
+                                                 no = ifelse(test = x[1]>x[2],
+                                                             yes = NA,
+                                                             no = x[1]/x[2])))
+
 reviews$helpful.bins = cut(reviews$helpful.perc,
                            breaks = 3,
                            include.lowest = TRUE,
                            labels = c("Lower", "Middle", "Upper"))
 
+#--------------------------------------
 # Convert existing variables
+#--------------------------------------
 reviews$overall.fac = as.factor(reviews$overall.num)
+
 reviews$reviewerID = as.factor(reviews$reviewerID)
+
 reviews$asin = as.factor(reviews$asin)
 
-# Create additional variables
-reviews$reviewText.count = sapply(gregexpr("\\S+",
-                                           reviews$reviewText),
+#--------------------------------------
+# Additional features by RegEx & other grammar methods
+#--------------------------------------
+# Count of words in review text
+reviews$reviewText.count = sapply(gregexpr(pattern = "\\S+",
+                                           text = reviews$reviewText),
                                   length)
-reviews$summary.count = sapply(gregexpr("\\S+",
-                                        reviews$summary),
+
+# Count of words in summary text
+reviews$summary.count = sapply(gregexpr(pattern = "\\S+",
+                                        text = reviews$summary),
                                length)
+
+# All caps words ratio to number of words in review
+reviews$n.caps = sapply(gregexpr(pattern = "\\b[A-Z]{2,}\\b",
+                                 text = reviews$reviewText),
+                        function(x) length(c(x[x > 0])))
+
+# Caps ratio
+reviews$all.caps.ratio = reviews$n.caps / reviews$reviewText.count
+
+# Number of Punctation
+reviews$n.punc = sapply(gregexpr(pattern = "[[:punct:]]",
+                                 text = reviews$reviewText),
+                        function(x) length(c(x[x > 0])))
+
+# Ratio to Nwords
+reviews$n.punc.ratio = reviews$n.punc / reviews$reviewText.count
+
+#Total reviews written by user
+reviews.count.df = as.data.frame(table(reviews$reviewerID))
+colnames(reviews.count.df) = c("reviewerID",
+                               "Total.Reviews")
+reviews = merge(x = reviews,
+                y = reviews.count.df,
+                by = "reviewerID")
+
+#Average word length
+reviews$word.len.mean = sapply(reviews$reviewText,
+                               word_len_mean,
+                               USE.NAMES = FALSE)
+reviews$word.len.mean[is.na(reviews$word.len.mean)] = 
+    mean(reviews$word.len.mean,
+         na.rm = TRUE)
+
+#--------------------------------------
+# Additional features by time
+#--------------------------------------
 reviews$time.stamp = as.Date(as.POSIXct(reviews$unixReviewTime,
                                         origin="1970-01-01"))
+
 reviews$time.weekday = as.factor(weekdays(reviews$time.stamp))
+
 reviews$time.months = as.factor(months(reviews$time.stamp))
+
 reviews$time.year = as.factor(substr(x = reviews$time.stamp,
                                      start = 1,
                                      stop = 4))
+
 reviews$time.min = ave(reviews$time.stamp,
                        reviews$asin,
                        FUN = min)
 
-## TO-DO
-# Time Delay
-#reviews.tfidf$date.diff = reviews.tfidf$time.stamp - reviews.tfidf$time.min
+reviews$date.diff = reviews$time.stamp - reviews$time.min
 
 # Deviation from the mean score (signed deviation from the average rating)
-#reviews.tfidf$avg.asin.rating = ave(reviews.tfidf$overall.num, 
-#                                    reviews.tfidf$asin, FUN = mean)
+reviews$asin.rating.mean = ave(reviews$overall.num, 
+                               reviews$asin,
+                               FUN = mean)
+reviews$dev.mean = reviews$asin.rating.mean - reviews$overall.num
 
-#reviews.tfidf$dev.mean = reviews.tfidf$avg.asin.rating - reviews.tfidf$overall.num
+#--------------------------------------
+# Time features as factors to flags
+#--------------------------------------
+# Create list of feature names
+cols.list = colnames(reviews[, 26:28])
 
-# Drop helpful
-reviews = subset(reviews, select = -c(helpful))
+# Run function
+#   Note: uses {-1, 1} as SVM tends to "like" that better than {0, 1}
+reviews = fac.level(reviews, list = cols.list)
+
+# Clean up
+rm(cols.list)
 
 #==============================================================================
 # S04 - EDA
 #==============================================================================
+
+#------------------------------------------------------------------------------
+# EDA dataset
+#------------------------------------------------------------------------------
+# Drop helpful
+reviews = subset(reviews, select = -c(helpful))
 
 # Subset reviews for EDA
 reviews.eda = reviews[reviews$helpful.nan == 0, ]
