@@ -1,7 +1,7 @@
 #==============================================================================
 #==============================================================================
 # 00_reviews_Master
-# Last Updated: 2016-11-19 by MJG
+# Last Updated: 2016-12-03 by MJG
 #==============================================================================
 #==============================================================================
 
@@ -14,14 +14,17 @@ library(doParallel)
 library(dplyr)
 library(gbm)
 library(ggplot2)
+library(gridExtra)
 library(httr)
 library(jsonlite)
 library(randomForest)
+library(pROC)
 library(stringr)
 library(syuzhet)
 library(tidytext)
 library(tm)
 library(wordcloud)
+library(xgboost)
 
 #==============================================================================
 # S00 | Table of Contents
@@ -36,8 +39,8 @@ library(wordcloud)
 #   S06 - Sentiment Analysis
 #   S07 - TF-IDF
 #   S08 - Model Prep
-#   S09 - Model Build (Classification)
-#   S10 - Model Build (Regression)
+#   S09 - Model Build (Triple Class)
+#   S10 - Model Build (Binary Class)
 
 #==============================================================================
 # S01 | Functions
@@ -925,6 +928,7 @@ for (review in reviews.tfidf$reviewsPK){
     idx = tfidf$reviewsPK == review
     words = tfidf$word[idx]
     idx.top = words %in% tfidf.relevance$word[1:200]
+    #idx.top = words %in% samp
     counts = tfidf$word.freq.one[idx]
     reviews.tfidf[which(reviews.tfidf$reviewsPK == review),
                   words[idx.top]] = counts[idx.top]
@@ -1000,7 +1004,7 @@ reviews.mod.trn.sub = reviews.mod[trn.idx, ][trn.idx.sub, ]
 reviews.mod.tst = reviews.mod[tst.idx, ]
 
 #==============================================================================
-# S09 - Model Build (Classification)
+# S09 - Model Build (Triple Class)
 #==============================================================================
 # Note: various models built, organized by type, then model number(s)
 # Note: models below currently use sub-sample to build model, but predict
@@ -1588,23 +1592,366 @@ gbm.m1.tst.tst.cm = confusionMatrix(p.predBST,
                                     reviews.mod.tst$helpful.bins)
 
 #==============================================================================
-# S10 - Model Build (Regression)
+# S10 - Model Build (Binary Class)
 #==============================================================================
-# Note: various models built, organized by type, then model number(s)
-# Note: models below currently use sub-sample to build model, but predict
-#   on full test set
 
 #------------------------------------------------------------------------------
-# Random Forest
+# xgboost
 #------------------------------------------------------------------------------
+# Accuracy: 0.71
+# Use the probabilities as a way to rank the reviews shown to the customer
+# Higher probability means a higher confidence that the review is "helpful"
+# System will show reviews with high probability of helpfulness
 
-# Lorem ipsum
+# Converting helpful bins to a binary variable
+reviews.mod.trn.sub$helpful.binary = 
+    ifelse(reviews.mod.trn.sub$helpful.bins == "Upper",
+           "Helpful",
+           "Not_Helpful")
+reviews.mod.trn$helpful.binary = ifelse(reviews.mod.trn$helpful.bins == "Upper",
+                                        "Helpful",
+                                        "Not_Helpful")
+reviews.mod.tst$helpful.binary = ifelse(reviews.mod.tst$helpful.bins == "Upper",
+                                        "Helpful",
+                                        "Not_Helpful")
+
+# create character vector to match predictor column names
+ToMatch = c("overall.num",
+            "reviewText.count",
+            "date.diff.num",
+            "dev.mean",
+            "all.caps.ratio",
+            "avg.asin.rating",
+            "n.punc",
+            "Total.Reviews",
+            "avg.word.len",
+            "time.min.num")
+
+predictor_cols = grep(paste(ToMatch,collapse = "|"),
+                      colnames(reviews.mod.trn))
+
+# match response column index
+response_col = grep("helpful.binary",
+                    colnames(reviews.mod.trn))
+
+x = data.matrix(reviews.mod.trn[,predictor_cols])
+
+y = as.numeric(as.factor(reviews.mod.trn[,response_col])) - 1
+
+dtrain <- xgb.DMatrix(data = x,
+                      label = y)
+
+# fit xgboost model
+ptm = proc.time()
+xgb.binary = xgboost(data = dtrain,
+                     eta = 0.1,
+                     max_depth = 15, 
+                     nround=200, 
+                     objective="binary:logistic",
+                     nthread = 5
+)
+proc.time() - ptm; rm(ptm)
+
+# Process test data for GBM
+reviews.mod.tst$time.min.num = as.numeric(as.POSIXct(reviews.mod.tst$time.min))
+reviews.mod.tst$date.diff.num = as.numeric(reviews.mod.tst$date.diff)
+
+# predict values in test set
+xgb.pred.binary = predict(xgb.binary,
+                          data.matrix(reviews.mod.tst[,predictor_cols]))
+
+# add probabilities as a column to the test data set
+reviews.mod.tst$xgb.pred.binary = xgb.pred.binary
+
+# sort the test reviews from most confident 
+sort.reviews.mod.tst = reviews.mod.tst[order(xgb.pred.binary),]
+
+# view 
+head(sort.reviews.mod.tst[, c(11, 13, dim(sort.reviews.mod.tst)[2])], 10)
+
+# setup as factor for confusion matrix
+xgb.pred.binary = ifelse(xgb.pred.binary > 0.50,
+                         "Not_Helpful",
+                         "Helpful")
+
+# confusion matrix
+xgb.m1.tst.cm.binary = confusionMatrix(xgb.pred.binary,
+                                       reviews.mod.tst$helpful.binary)
+# view confusion matrix
+t = xgb.m1.tst.cm.binary$table
+
+# save model
+xgb.save(xgb.binary, "xgboost.model")
+
+# View Variable Importance
+importance_matrix = xgb.importance(feature_names = ToMatch,
+                                   model = xgb.binary)
+print(importance_matrix)
+xgb.plot.importance(importance_matrix = importance_matrix)
+
+#build ROC object
+rocObject = roc(reviews.mod.tst$helpful.binary,
+                reviews.mod.tst$xgb.pred.binary)
+plot(rocObject)
+
+pdf("ConfusionMatrix.pdf", height=11, width=8.5)
+grid.table(t)
+dev.off()
 
 #------------------------------------------------------------------------------
-# Support Vector Machine
+# Ensemble - Candidates
 #------------------------------------------------------------------------------
+# Comparing several models for overview of performance (binary helpful)
+# GBM, SVM, XGB, RF, C5.0 best performers
+# Candidates for ensemble
 
-# Lorem ipsum
+# Matching column indices to keep for the dataset passed to the algorithm
+ToMatch = c("overall.num",
+            "reviewText.count",
+            "summary.count",
+            "date.diff.num",
+            "dev.mean",
+            "all.caps.ratio",
+            "n.punc",
+            "Total.Reviews",
+            "avg.word.len",
+            "time.min.num",
+            "helpful.binary")
+Cols = grep(paste(ToMatch,collapse = "|"),
+            colnames(reviews.mod.trn.sub))
+
+# prepare training scheme
+control = trainControl(method = "cv",
+                       number = 5)
+
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+# train the GBM model
+set.seed(7)
+modelGbm = train(helpful.binary ~ .,
+                 data = reviews.mod.trn.sub[, Cols],
+                 method = "gbm", 
+                 trControl = control, 
+                 verbose = FALSE)
+
+# train the SVM model
+set.seed(7)
+modelSvm = train(helpful.binary ~ .,
+                 data = reviews.mod.trn.sub[, Cols], 
+                 method="svmRadial", 
+                 trControl=control)
+
+# train the xgb tree
+set.seed(7)
+modelXGB = train(helpful.binary ~ .,
+                 data = reviews.mod.trn.sub[, Cols], 
+                 method="xgbTree", 
+                 trControl=control)
+
+# train the naive bayes
+set.seed(7)
+modelNB = train(helpful.binary ~ .,
+                data = reviews.mod.trn.sub[, Cols],
+                method="nb", 
+                trControl=control)
+
+# train the rf
+set.seed(7)
+modelRF = train(helpful.binary ~ .,
+                data = reviews.mod.trn.sub[, Cols],
+                method="rf", 
+                trControl=control)
+
+#train C5.0
+set.seed(7)
+modelC5.0 = train(helpful.binary ~ .,
+                  data = reviews.mod.trn.sub[, Cols],
+                  method="C5.0", 
+                  trControl=control)
+
+#train Neural Net
+set.seed(7)
+modelNNET = train(helpful.binary ~ .,
+                  data = reviews.mod.trn.sub[, Cols],
+                  method="nnet", 
+                  trControl=control)
+
+stopCluster(cl)
+
+# collect resamples
+results = resamples(list(GBM = modelGbm,
+                         SVM = modelSvm,
+                         XGB = modelXGB,
+                         NB = modelNB,
+                         RF = modelRF,
+                         C5.0 = modelC5.0,
+                         NNET = modelNNET))
+
+# summarize the distributions
+summary(results)
+
+#------------------------------------------------------------------------------
+# Ensemble - Final Model
+#------------------------------------------------------------------------------
+# Ensemble Model
+# Base Learners: SVM, RF, C5.0
+# Second level model: XGB
+
+# Converting helpful bins to a binary variable
+reviews.mod.trn.sub$helpful.binary = 
+    ifelse(reviews.mod.trn.sub$helpful.bins == "Upper",
+           "Helpful",
+           "Not_Helpful")
+reviews.mod.trn$helpful.binary = ifelse(reviews.mod.trn$helpful.bins == "Upper",
+                                        "Helpful",
+                                        "Not_Helpful")
+reviews.mod.tst$helpful.binary = ifelse(reviews.mod.tst$helpful.bins == "Upper",
+                                        "Helpful",
+                                        "Not_Helpful")
+
+#subset columns from review.mod.trn & review.mod.tst
+ToMatch = c("overall.num",
+            "reviewText.count",
+            "summary.count",
+            "date.diff.num",
+            "dev.mean",
+            "all.caps.ratio",
+            "n.punc",
+            "Total.Reviews",
+            "avg.word.len",
+            "time.min.num",
+            "helpful.binary")
+Cols = grep(paste(ToMatch,collapse = "|"),
+            colnames(reviews.mod.trn.sub))
+
+train = reviews.mod.trn[, Cols]
+test = reviews.mod.tst[, Cols]
+
+head(train)
+head(test)
+
+#set seed for reproducability
+set.seed(1234)
+
+#Create ensembleData & blenderData
+train = train[sample(nrow(train)), ]
+split = floor(nrow(train)/2)
+
+ensembleData = train[0:split, ]
+blenderData = train[(split + 1):(split*2), ]
+
+#assign label name & predictor variables
+labelName = "helpful.binary"
+predictors = names(ensembleData)[names(ensembleData) != labelName]
+
+#set train control 
+myControl = trainControl(method = "cv", 
+                         number = 3,
+                         returnResamp = "none",
+                         classProbs = TRUE)
+
+#train first level models
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+model.C5.0 = train(ensembleData[, predictors],
+                   ensembleData[, labelName],
+                   method = "C5.0",
+                   trControl = myControl)
+
+model.svm = train(ensembleData[, predictors],
+                  ensembleData[, labelName],
+                  method = "svmRadial",
+                  trControl = myControl)
+
+model.rf = train(ensembleData[, predictors],
+                 ensembleData[, labelName],
+                 method = "rf",
+                 trControl = control)
+
+stopCluster(cl)
+
+#--------------------------------------
+# Predict on the blender data & testing data, probabilities that are added
+# are those that predicted helpful 
+#--------------------------------------
+
+#------------------
+# Blender data
+#------------------
+# gbm
+C5.0.preds = predict(object = model.C5.0,
+                     blenderData[, predictors],
+                     type = "prob")
+blenderData$C5.0.probs = C5.0.preds$Helpful
+
+# svm
+svm.preds = predict(object = model.svm,
+                    blenderData[, predictors],
+                    type = "prob")
+blenderData$svm.probs = svm.preds$Helpful
+
+# rf
+rf.preds = predict(object = model.rf,
+                   blenderData[, predictors],
+                   type = "prob")
+blenderData$rf.probs = rf.preds$Helpful
+
+#------------------
+# Testing data
+#------------------
+# gbm
+C5.0.preds = predict(object = model.C5.0,
+                     test[, predictors],
+                     type = "prob")
+test$C5.0.probs = C5.0.preds$Helpful
+
+# svm
+svm.preds = predict(object = model.svm,
+                    test[, predictors],
+                    type = "prob")
+test$svm.probs = svm.preds$Helpful
+
+# rf
+rf.preds = predict(object = model.rf,
+                   test[, predictors],
+                   type = "prob")
+test$rf.probs = rf.preds$Helpful
+
+head(blenderData)
+
+#predictors for the second level model
+predictors = names(blenderData)[names(blenderData) != labelName]
+
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+x =  data.matrix(blenderData[, predictors])
+y = as.numeric(as.factor(blenderData[, labelName])) - 1
+
+dtrain <- xgb.DMatrix(data = x,
+                      label = y)
+
+ptm = proc.time()
+xgb.binary = xgboost(data = dtrain,
+                     eta = 0.01,
+                     max_depth = 15, 
+                     nround=250, 
+                     objective="binary:logistic",
+                     nthread = 5)
+proc.time() - ptm; rm(ptm)
+
+preds = predict(xgb.binary,
+                data.matrix(test[, predictors]))
+
+preds = ifelse(preds > 0.50,
+               "Not_Helpful",
+               "Helpful")
+
+cm = confusionMatrix(preds,
+                     test$helpful.binary)
+cm
 
 #==============================================================================
 # FIN
